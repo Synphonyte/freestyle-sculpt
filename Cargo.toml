@@ -19,7 +19,7 @@ glam = "0.30"
 hashbrown = "0.16"
 itertools = "0.14"
 lazy_static = { version = "1.5.0", optional = true }
-mesh-graph = { version = "0.3.1" }
+mesh-graph = { version = "0.3.2" }
 parry3d = "0.25"
 rerun = { version = "0.25", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }

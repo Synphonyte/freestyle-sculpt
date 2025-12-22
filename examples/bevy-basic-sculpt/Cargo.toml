@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { version = "0.16" }
-bevy_panorbit_camera = { version = "0.26", features = ["bevy_egui"] }
+bevy = { version = "0.17.2" }
+bevy_panorbit_camera = { version = "0.30.0", features = ["bevy_egui"] }
 # bevy-inspector-egui = "0.28"
 freestyle-sculpt = { path = "../..", features = ["bevy", "rerun"] }
-itertools = "0.14.0"
+itertools = "*"
 mesh-graph = { version = "*", features = ["bevy", "rerun"] }

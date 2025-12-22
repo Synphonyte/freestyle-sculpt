@@ -23,7 +23,9 @@
 //! If you want to implement a custom selection strategy, you can create a struct that implements the [`MeshSelector`] trait. Have a look
 //! at the existing selection strategies in the [`selectors`] module for inspiration.
 
+use itertools::Itertools;
 use mesh_graph::MeshGraph;
+use parry3d::utils::median;
 
 ///Deformation fields to do the vertex manipulation
 pub mod deformation;
@@ -57,15 +59,15 @@ impl SculptParams {
         }
     }
 
-    pub fn from_mesh_graph(mesh_graph: &MeshGraph) -> Self {
-        let mut edge_length = 0.0;
+    pub fn from_mesh_graph(mesh_graph: &MeshGraph, min_edge_length: f32) -> Self {
+        let edge_length = median(
+            &mut mesh_graph
+                .halfedges
+                .values()
+                .map(|he| he.length(mesh_graph))
+                .collect_vec(),
+        );
 
-        for he in mesh_graph.halfedges.values() {
-            edge_length += he.length(mesh_graph);
-        }
-
-        edge_length /= mesh_graph.halfedges.len() as f32;
-
-        Self::new(edge_length * 1.5)
+        Self::new((edge_length * 1.5).max(min_edge_length))
     }
 }

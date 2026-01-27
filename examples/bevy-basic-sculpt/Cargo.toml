@@ -4,9 +4,16 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { version = "0.17.2" }
-bevy_panorbit_camera = { version = "0.30.0", features = ["bevy_egui"] }
+bevy = { version = "0.18" }
+bevy_panorbit_camera = { version = "0.34.0", features = ["bevy_egui"] }
 # bevy-inspector-egui = "0.28"
-freestyle-sculpt = { path = "../..", features = ["bevy", "rerun"] }
+freestyle-sculpt = { path = "../..", features = [
+  "bevy",
+  # "rerun"
+] }
+hashbrown = "0.16.1"
 itertools = "*"
-mesh-graph = { version = "*", features = ["bevy", "rerun"] }
+mesh-graph = { version = "*", features = [
+  "bevy",
+  # "rerun",
+], path = "../../../mesh-graph" }

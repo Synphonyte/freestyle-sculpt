@@ -1,6 +1,5 @@
 use glam::Vec3;
 use hashbrown::HashSet;
-use parry3d::math::{Point, Vector};
 
 use mesh_graph::{Face, MeshGraph, Selection, error_none};
 use tracing::{error, instrument};
@@ -54,8 +53,8 @@ impl<D: DistanceCalculator + Copy + 'static> MeshSelector for MetricWithFalloff<
         let mut vertices = HashSet::new();
 
         let aabb = parry3d::bounding_volume::Aabb::from_half_extents(
-            Point::new(input_pos.x, input_pos.y, input_pos.z),
-            Vector::from_element(self.radius + self.falloff),
+            input_pos,
+            Vec3::splat(self.radius + self.falloff),
         );
         let potential_faces = mesh_graph.bvh.intersect_aabb(&aabb);
 

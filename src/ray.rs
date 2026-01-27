@@ -1,10 +1,6 @@
-use glam::{Vec3, vec3};
-use parry3d::{
-    math::{Point, Vector},
-    query::{PointQueryWithLocation, RayCast},
-};
-
+use glam::Vec3;
 use mesh_graph::{Face, MeshGraph};
+use parry3d::query::{PointQueryWithLocation, RayCast};
 
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -24,28 +20,19 @@ impl Ray {
         let parry_ray = self.into();
 
         let toi = mesh_graph.cast_local_ray(&parry_ray, f32::MAX, true)?;
-        let hit_point = parry_ray.point_at(toi);
+        let point = parry_ray.point_at(toi);
 
         // TODO : implement cast_local_ray_and_get_location so this is not necessary
-        let (_, face) = mesh_graph.project_local_point_and_get_location_with_max_dist(
-            &hit_point,
-            true,
-            f32::MAX,
-        )?;
+        let (_, face) =
+            mesh_graph.project_local_point_and_get_location_with_max_dist(point, true, f32::MAX)?;
 
-        Some(FaceIntersection {
-            point: vec3(hit_point.x, hit_point.y, hit_point.z),
-            face,
-        })
+        Some(FaceIntersection { point, face })
     }
 }
 
 impl From<Ray> for parry3d::query::Ray {
     fn from(ray: Ray) -> Self {
-        Self::new(
-            Point::new(ray.origin.x, ray.origin.y, ray.origin.z),
-            Vector::new(ray.direction.x, ray.direction.y, ray.direction.z),
-        )
+        Self::new(ray.origin, ray.direction)
     }
 }
 

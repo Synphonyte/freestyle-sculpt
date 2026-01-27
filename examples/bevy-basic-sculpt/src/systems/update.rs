@@ -2,7 +2,8 @@ use bevy::picking::backend::ray::RayMap;
 use bevy::prelude::*;
 use freestyle_sculpt::SculptParams;
 use freestyle_sculpt::ray::Ray;
-use mesh_graph::MeshGraph;
+use hashbrown::HashSet;
+use mesh_graph::{HalfedgeId, MeshGraph, VertexId};
 
 use crate::resources::*;
 
@@ -39,6 +40,8 @@ pub fn handle_mouse(
     mut mesh_graphs: Query<(&mut MeshGraph, &Mesh3d)>,
     mut prev_point: Local<Vec3>,
     mut deformation_active: Local<bool>,
+    mut protected_halfedges: Local<HashSet<HalfedgeId>>,
+    mut protected_vertices: Local<HashSet<VertexId>>,
 ) -> Result {
     let (mut mesh_graph, mesh_handle) = mesh_graphs.single_mut()?;
 
@@ -95,7 +98,17 @@ pub fn handle_mouse(
                         } else {
                             0.01
                         };
-                        deformation_field.apply(&mut mesh_graph, strength, *sculpt_params);
+
+                        protected_halfedges.clear();
+                        protected_vertices.clear();
+
+                        deformation_field.apply(
+                            &mut mesh_graph,
+                            strength,
+                            *sculpt_params,
+                            &mut *protected_halfedges,
+                            &mut *protected_vertices,
+                        );
 
                         *mesh = mesh_graph.clone().into();
                     }

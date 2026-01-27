@@ -4,7 +4,7 @@ mod systems;
 use crate::resources::*;
 use crate::systems::*;
 
-use bevy::color::palettes::css::{BLACK, WHITE};
+use bevy::color::palettes::css::BLACK;
 use bevy::input::common_conditions::{input_just_pressed, input_just_released, input_pressed};
 use bevy::prelude::*;
 // use bevy_inspector_egui::quick::WorldInspectorPlugin;
@@ -16,11 +16,7 @@ use freestyle_sculpt::selectors::*;
 fn main() {
     App::new()
         .insert_resource(ClearColor(BLACK.into()))
-        .insert_resource(AmbientLight {
-            color: WHITE.into(),
-            brightness: 0.6,
-            affects_lightmapped_meshes: true,
-        })
+        .init_resource::<GlobalAmbientLight>()
         .insert_resource(SculptParams::new(1.0))
         .insert_non_send_resource(AvailableDeformations::new(vec![
             Box::new(TranslateDeformation::default()),

@@ -1,6 +1,6 @@
 use glam::Vec3;
 use mesh_graph::{MeshGraph, Selection};
-use parry3d::{math::Point, query::PointQueryWithLocation};
+use parry3d::query::PointQueryWithLocation;
 
 use crate::{
     ray::FaceIntersection,
@@ -70,11 +70,7 @@ impl DeformationField for TranslateDeformation {
         let (face, point) = if let Some(face_intersection) = face_intersection {
             (face_intersection.face, face_intersection.point)
         } else if let Some((_, face)) = mesh_graph
-            .project_local_point_and_get_location_with_max_dist(
-                &Point::new(self.point.x, self.point.y, self.point.z),
-                true,
-                f32::MAX,
-            )
+            .project_local_point_and_get_location_with_max_dist(self.point, true, f32::MAX)
         {
             (face, self.point)
         } else {

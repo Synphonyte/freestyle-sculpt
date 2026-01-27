@@ -39,10 +39,26 @@ pub mod selectors;
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(from = "SculptParamsSerde"))]
 pub struct SculptParams {
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub max_move_dist_squared: f32,
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub min_edge_length_squared: f32,
     pub max_edge_length_squared: f32,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub max_thickness_squared: f32,
+}
+
+#[cfg(feature = "serde")]
+struct SculptParamsSerde {
+    pub max_edge_length_squared: f32,
+}
+#[cfg(feature = "serde")]
+impl From<SculptParamsSerde> for SculptParams {
+    fn from(value: SculptParamsSerde) -> Self {
+        Self::from_max_edge_length_squared(value.max_edge_length_squared)
+    }
 }
 
 impl SculptParams {
@@ -50,12 +66,18 @@ impl SculptParams {
     ///
     /// All other parameters are calculated based on the maximum edge length.
     pub const fn new(max_edge_length: f32) -> Self {
-        let max_edge_length_squared = max_edge_length * max_edge_length;
+        Self::from_max_edge_length_squared(max_edge_length * max_edge_length)
+    }
+
+    const fn from_max_edge_length_squared(max_edge_length_squared: f32) -> Self {
+        let max_move_dist_squared = max_edge_length_squared * 0.11;
+        let max_thickness_squared = 4.0 * max_move_dist_squared + max_edge_length_squared * 0.35;
 
         Self {
-            max_move_dist_squared: max_edge_length_squared * 0.11,
+            max_move_dist_squared,
             min_edge_length_squared: max_edge_length_squared * 0.24,
             max_edge_length_squared,
+            max_thickness_squared,
         }
     }
 

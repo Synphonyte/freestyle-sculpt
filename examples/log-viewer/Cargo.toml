@@ -1,0 +1,17 @@
+[package]
+name = "log-viewer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+examples.workspace = true
+freestyle-sculpt = { workspace = true, features = ["serde", "rerun"] }
+glam = "0.30"
+mesh-graph = { version = "*", features = [
+  "serde",
+  "rerun",
+], path = "../../../mesh-graph" }
+serde.workspace = true
+serde_json.workspace = true
+tracing-subscriber.workspace = true

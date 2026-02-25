@@ -1,0 +1,16 @@
+[
+	{
+		"label": "Build & Debug",
+		"build": {
+			"command": "cargo",
+			"args": ["build"]
+		},
+		"env": { "RUST_LOG": "info", "RUST_BACKTRACE": "1" },
+		"program": "$ZED_WORKTREE_ROOT/../target/debug/log-viewer",
+		"args": ["../bevy-basic-sculpt/log.json"],
+		// sourceLanguages is required for CodeLLDB (not GDB) when using Rust
+		"sourceLanguages": ["rust"],
+		"request": "launch",
+		"adapter": "CodeLLDB"
+	}
+]

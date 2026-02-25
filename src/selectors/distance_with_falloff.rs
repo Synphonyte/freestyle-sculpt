@@ -1,17 +1,16 @@
 use glam::Vec3;
-use hashbrown::HashSet;
+use hashbrown::{HashMap, HashSet};
 
-use mesh_graph::{Face, MeshGraph, Selection, error_none};
+use mesh_graph::{MeshGraph, Selection, error_none};
 use tracing::{error, instrument};
 
-use super::{
-    DistanceCalculator, FalloffFn, L2, MeshSelector, WeightedSelection, faces_incident_to_vertices,
-    get_sphere_with_falloff_weight_callback,
-};
+use crate::ray::FaceIntersection;
+
+use super::{FalloffFn, MeshSelector, WeightedSelection, sphere_with_falloff_weight};
 
 /// Generates a selection of a mesh that is within a sphere with a falloff
 #[derive(Debug)]
-pub struct MetricWithFalloff<D: DistanceCalculator> {
+pub struct DistanceWithFalloff {
     /// The radius of the sphere.
     pub radius: f32,
 
@@ -20,37 +19,34 @@ pub struct MetricWithFalloff<D: DistanceCalculator> {
     /// The way the influence decreases is controlled by `falloff_func`.
     pub falloff: f32,
 
-    /// The metric squared used to calculate the distance between the input position and the vertices.
-    pub metric_squared: D,
-
     /// The falloff function used to calculate the weight of the selection.
     /// It receives values from 0.0 to 1.0 and has to return a value in the same range.
     /// Simply returning the input value is a linear falloff.
     pub falloff_func: FalloffFn,
 }
 
-impl MetricWithFalloff<L2> {
+impl DistanceWithFalloff {
     /// Creates a new `MetricWithFalloff` selector with a sphere metric (normal L2 distance).
     #[inline]
     pub fn sphere(radius: f32, falloff: f32, falloff_func: FalloffFn) -> Self {
         Self {
             radius,
             falloff,
-            metric_squared: L2,
             falloff_func,
         }
     }
 }
 
-impl<D: DistanceCalculator + Copy + 'static> MeshSelector for MetricWithFalloff<D> {
+impl MeshSelector for DistanceWithFalloff {
     #[instrument(skip(self, mesh_graph))]
     fn select(
         &self,
         mesh_graph: &MeshGraph,
-        input_pos: Vec3,
-        _input_face: Face,
+        face_intersection: &FaceIntersection,
     ) -> WeightedSelection {
-        let mut vertices = HashSet::new();
+        let input_pos = face_intersection.point;
+
+        let mut vertex_to_weight = HashMap::new();
 
         let aabb = parry3d::bounding_volume::Aabb::from_half_extents(
             input_pos,
@@ -74,28 +70,24 @@ impl<D: DistanceCalculator + Copy + 'static> MeshSelector for MetricWithFalloff<
 
         for vertex_id in potential_selection.resolve_to_vertices(mesh_graph) {
             if let Some(pos) = mesh_graph.positions.get(vertex_id) {
-                let distance = self.metric_squared.distance_squared(*pos, input_pos);
+                let dist_sqr = pos.distance_squared(input_pos);
 
-                if distance <= max_dist_sqr {
-                    vertices.insert(vertex_id);
+                if dist_sqr <= max_dist_sqr {
+                    vertex_to_weight.insert(
+                        vertex_id,
+                        sphere_with_falloff_weight(
+                            dist_sqr.sqrt(),
+                            self.radius,
+                            self.falloff,
+                            self.falloff_func,
+                        ),
+                    );
                 }
             } else {
                 error!("Position not found");
             }
         }
 
-        WeightedSelection {
-            selection: Selection {
-                faces: faces_incident_to_vertices(vertices, mesh_graph),
-                ..Default::default()
-            },
-            get_weight: get_sphere_with_falloff_weight_callback(
-                input_pos,
-                self.radius,
-                self.falloff,
-                self.falloff_func,
-                self.metric_squared,
-            ),
-        }
+        WeightedSelection { vertex_to_weight }
     }
 }

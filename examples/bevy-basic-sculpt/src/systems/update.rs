@@ -1,9 +1,8 @@
 use bevy::picking::backend::ray::RayMap;
 use bevy::prelude::*;
-use freestyle_sculpt::SculptParams;
 use freestyle_sculpt::ray::Ray;
-use hashbrown::HashSet;
-use mesh_graph::{HalfedgeId, MeshGraph, VertexId};
+use freestyle_sculpt::{SculptParams, deformation::TopologyManager};
+use mesh_graph::MeshGraph;
 
 use crate::resources::*;
 
@@ -27,6 +26,19 @@ pub fn cycle_selection_mode(
     }
 }
 
+pub fn save_log(log: Res<Log>) {
+    let writer = std::fs::File::create("log.json").unwrap();
+    serde_json::to_writer(writer, &*log).unwrap();
+}
+
+pub fn reset_log(mut log: ResMut<Log>, mesh_graphs: Query<&MeshGraph>) -> Result {
+    let mesh_graph = mesh_graphs.single()?;
+
+    *log = Log::new(&mesh_graph);
+
+    Ok(())
+}
+
 pub fn handle_mouse(
     ray_map: Res<RayMap>,
     buttons: Res<ButtonInput<MouseButton>>,
@@ -35,15 +47,17 @@ pub fn handle_mouse(
     current_deformation: Res<CurrentDeformation>,
     mut available_deformations: NonSendMut<AvailableDeformations>,
     current_selection: Res<CurrentSelection>,
+    mut topology_manager: NonSendMut<TopologyManager>,
     available_selections: NonSend<AvailableSelections>,
+    mut log: ResMut<Log>,
     picking_cameras: Query<&Camera>,
     mut mesh_graphs: Query<(&mut MeshGraph, &Mesh3d)>,
     mut prev_point: Local<Vec3>,
     mut deformation_active: Local<bool>,
-    mut protected_halfedges: Local<HashSet<HalfedgeId>>,
-    mut protected_vertices: Local<HashSet<VertexId>>,
 ) -> Result {
     let (mut mesh_graph, mesh_handle) = mesh_graphs.single_mut()?;
+
+    mesh_graph.optimize_bvh_incremental();
 
     let mesh = meshes.get_mut(mesh_handle).unwrap();
 
@@ -60,10 +74,27 @@ pub fn handle_mouse(
         let ray = Ray::from(ray);
         let intersection = ray.cast_ray_and_get_face_id(&mesh_graph);
 
+        let edit_action_type = if buttons.just_pressed(MouseButton::Left) {
+            EditActionType::MouseDown
+        } else if buttons.just_released(MouseButton::Left) {
+            EditActionType::MouseUp
+        } else {
+            EditActionType::MouseMove
+        };
+
+        log.log_action(EditAction {
+            ty: edit_action_type,
+            ray,
+            selector: **current_selection,
+            deformation: **current_deformation,
+        });
+        // let writer = std::fs::File::create("log.json").unwrap();
+        // serde_json::to_writer(writer, &*log).unwrap();
+
         if buttons.just_pressed(MouseButton::Left) {
             // Mouse down
             if let Some(intersection) = intersection {
-                deformation_field.on_pointer_down(&mesh_graph, selector.as_ref(), intersection);
+                deformation_field.on_pointer_down(intersection);
 
                 *deformation_active = true;
                 *prev_point = intersection.point;
@@ -73,10 +104,11 @@ pub fn handle_mouse(
         } else if buttons.just_released(MouseButton::Left) {
             // Mouse up
             if *deformation_active {
-                mesh_graph.optimize_bvh_incremental();
-
                 *deformation_active = false;
             }
+
+            // TODO : this should not be necessary here
+            mesh_graph.compute_vertex_normals();
         } else {
             // Mouse move
             if *deformation_active {
@@ -89,7 +121,6 @@ pub fn handle_mouse(
 
                     if deformation_field.on_pointer_move(
                         &mesh_graph,
-                        selector.as_ref(),
                         mouse_translation,
                         intersection,
                     ) {
@@ -99,15 +130,12 @@ pub fn handle_mouse(
                             0.01
                         };
 
-                        protected_halfedges.clear();
-                        protected_vertices.clear();
-
                         deformation_field.apply(
                             &mut mesh_graph,
+                            selector.as_ref(),
                             strength,
                             *sculpt_params,
-                            &mut *protected_halfedges,
-                            &mut *protected_vertices,
+                            &mut topology_manager,
                         );
 
                         *mesh = mesh_graph.clone().into();

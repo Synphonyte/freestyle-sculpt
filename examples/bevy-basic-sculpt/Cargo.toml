@@ -4,16 +4,25 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { version = "0.18" }
-bevy_panorbit_camera = { version = "0.34.0", features = ["bevy_egui"] }
-# bevy-inspector-egui = "0.28"
-freestyle-sculpt = { path = "../..", features = [
-  "bevy",
-  # "rerun"
+bevy = { version = "0.18", default-features = false, features = [
+  "bevy_pbr",
+  "bevy_window",
+  "bevy_winit",
+  "bevy_picking",
+  "mesh_picking",
+  "tonemapping_luts",
+  "zstd_rust",
 ] }
-hashbrown = "0.16.1"
+bevy_panorbit_camera = { version = "0.34", features = ["bevy_egui"] }
+# bevy-inspector-egui = "0.28"
+examples = { workspace = true, features = ["bevy"] }
+freestyle-sculpt = { workspace = true, features = ["bevy", "serde"] }
+hashbrown = "0.16"
 itertools = "*"
-mesh-graph = { version = "*", features = [
+mesh-graph = { workspace = true, features = [
   "bevy",
-  # "rerun",
+  "serde",
 ], path = "../../../mesh-graph" }
+serde.workspace = true
+serde_json.workspace = true
+tracing-subscriber.workspace = true

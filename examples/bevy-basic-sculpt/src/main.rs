@@ -14,18 +14,26 @@ use freestyle_sculpt::deformation::*;
 use freestyle_sculpt::selectors::*;
 
 fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_line_number(true)
+        .pretty()
+        .init();
+
     App::new()
         .insert_resource(ClearColor(BLACK.into()))
         .init_resource::<GlobalAmbientLight>()
         .insert_resource(SculptParams::new(1.0))
         .insert_non_send_resource(AvailableDeformations::new(vec![
-            Box::new(TranslateDeformation::default()),
-            Box::new(SmoothDeformation::default()),
+            Box::new(ErodeDilateDeformation::new(0.2)),
+            Box::new(ErodeDilateDeformation::new(-10.0)),
+            Box::new(TranslateDeformation::new()),
+            Box::new(SmoothDeformation::new(0.1)),
         ]))
         .init_resource::<CurrentDeformation>()
         .insert_non_send_resource(AvailableSelections::new(vec![
-            Box::new(MetricWithFalloff::sphere(1.5, 1.5, SMOOTH_FALLOFF)),
-            Box::new(SurfaceMetricWithFalloff::sphere(1.5, 1.5, SMOOTH_FALLOFF)),
+            Box::new(GeodesicWithFalloff::sphere(1.5, 1.5, SMOOTH_FALLOFF)),
+            Box::new(DistanceWithFalloff::sphere(1.5, 1.5, SMOOTH_FALLOFF)),
         ]))
         .init_resource::<CurrentSelection>()
         .add_plugins((
@@ -43,6 +51,8 @@ fn main() {
                 ),
                 cycle_deformation_mode.run_if(input_just_pressed(KeyCode::KeyD)),
                 cycle_selection_mode.run_if(input_just_pressed(KeyCode::KeyS)),
+                save_log.run_if(input_just_pressed(KeyCode::KeyL)),
+                reset_log.run_if(input_just_pressed(KeyCode::KeyR)),
             ),
         )
         .run();

@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+pub use examples::*;
 use freestyle_sculpt::{deformation::DeformationField, selectors::MeshSelector};
 
 #[derive(Resource, Copy, Clone, Default, Deref, DerefMut)]

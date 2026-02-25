@@ -1,13 +1,26 @@
-use bevy::{color::palettes::css::SILVER, prelude::*};
+use bevy::{color::palettes::css::SILVER, ecs::system::SystemState, prelude::*};
 use bevy_panorbit_camera::PanOrbitCamera;
+use freestyle_sculpt::deformation::TopologyManager;
 use mesh_graph::{MeshGraph, primitives::IcoSphere};
 
+use crate::resources::Log;
+
+#[allow(clippy::type_complexity)]
 pub fn setup(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    world: &mut World,
+    params: &mut SystemState<(
+        Commands,
+        ResMut<Assets<Mesh>>,
+        ResMut<Assets<StandardMaterial>>,
+    )>,
 ) {
-    let (mesh, mesh_graph) = init_icosphere();
+    let (mesh, mut mesh_graph) = init_icosphere();
+    mesh_graph.compute_vertex_normals();
+
+    world.insert_non_send_resource(TopologyManager::new(&mesh_graph, *world.resource()));
+    world.insert_resource(Log::new(&mesh_graph));
+
+    let (mut commands, mut meshes, mut materials) = params.get_mut(world);
 
     commands.spawn((
         Mesh3d(meshes.add(mesh)),
@@ -36,6 +49,8 @@ pub fn setup(
             ..default()
         },
     ));
+
+    params.apply(world);
 }
 
 fn init_icosphere() -> (Mesh, MeshGraph) {

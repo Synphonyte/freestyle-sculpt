@@ -26,6 +26,8 @@
 use itertools::Itertools;
 use mesh_graph::MeshGraph;
 use parry3d::utils::median;
+#[cfg(feature = "serde")]
+use serde::Deserialize;
 
 ///Deformation fields to do the vertex manipulation
 pub mod deformation;
@@ -41,16 +43,28 @@ pub mod selectors;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(from = "SculptParamsSerde"))]
 pub struct SculptParams {
+    /// In the Freestyle paper referred to as `d_move`
     #[cfg_attr(feature = "serde", serde(skip))]
     pub max_move_dist_squared: f32,
+
+    /// In the Freestyle paper referred to as `d`
     #[cfg_attr(feature = "serde", serde(skip))]
     pub min_edge_length_squared: f32,
+
+    /// In the Freestyle paper referred to as `d_detail`
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub max_edge_length_squared: f32,
+
+    /// In the Freestyle paper referred to as `d_thickness`.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub max_thickness_half: f32,
+    /// In the Freestyle paper referred to as `d_thickness`.
     #[cfg_attr(feature = "serde", serde(skip))]
     pub max_thickness_squared: f32,
 }
 
 #[cfg(feature = "serde")]
+#[derive(Deserialize)]
 struct SculptParamsSerde {
     pub max_edge_length_squared: f32,
 }
@@ -65,11 +79,11 @@ impl SculptParams {
     /// Creates a new instance of `SculptParams` with the specified maximum edge length.
     ///
     /// All other parameters are calculated based on the maximum edge length.
-    pub const fn new(max_edge_length: f32) -> Self {
+    pub fn new(max_edge_length: f32) -> Self {
         Self::from_max_edge_length_squared(max_edge_length * max_edge_length)
     }
 
-    const fn from_max_edge_length_squared(max_edge_length_squared: f32) -> Self {
+    fn from_max_edge_length_squared(max_edge_length_squared: f32) -> Self {
         let max_move_dist_squared = max_edge_length_squared * 0.11;
         let max_thickness_squared = 4.0 * max_move_dist_squared + max_edge_length_squared * 0.35;
 
@@ -78,6 +92,7 @@ impl SculptParams {
             min_edge_length_squared: max_edge_length_squared * 0.24,
             max_edge_length_squared,
             max_thickness_squared,
+            max_thickness_half: max_thickness_squared.sqrt() * 0.5,
         }
     }
 

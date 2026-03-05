@@ -49,6 +49,7 @@ impl DeformationField for TranslateDeformation {
             self.intersection = Some(FaceIntersection {
                 face,
                 point: self.point,
+                toi: 0.0,
             });
         } else {
             self.intersection = None;

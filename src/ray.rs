@@ -26,7 +26,7 @@ impl Ray {
         let (_, face) =
             mesh_graph.project_local_point_and_get_location_with_max_dist(point, true, f32::MAX)?;
 
-        Some(FaceIntersection { point, face })
+        Some(FaceIntersection { point, face, toi })
     }
 }
 
@@ -45,4 +45,5 @@ impl From<Ray> for parry3d::query::Ray {
 pub struct FaceIntersection {
     pub point: Vec3,
     pub face: Face,
+    pub toi: f32,
 }

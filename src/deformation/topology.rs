@@ -209,16 +209,7 @@ impl<'a> PhysicsHooks for TopologyPhysicsHooks<'a> {
 
         let halfedge_from_to = self.mesh_graph.halfedge_from_to(v_id1, v_id2);
 
-        if let Some(he_id) = halfedge_from_to {
-            #[cfg(feature = "rerun")]
-            {
-                self.mesh_graph.log_he_rerun("neighbor_collision", he_id);
-                TopologyManager::log_colliders_rerun(
-                    "collision_filter/rejected_neihbours",
-                    [collider1, collider2],
-                );
-            }
-
+        if halfedge_from_to.is_some() {
             false
         } else {
             let Some(&norm_1) = self.mesh_graph.vertex_normals.as_ref().unwrap().get(v_id1) else {

@@ -87,7 +87,7 @@ pub trait DeformationField {
         strength: f32,
         params: SculptParams,
         topology_manager: &mut TopologyManager,
-    ) {
+    ) -> HashMap<VertexId, f32> {
         let max_movement_squared = self.max_movement_squared(mesh_graph, selector, strength);
 
         let steps = (max_movement_squared / params.max_move_dist_squared)
@@ -113,7 +113,7 @@ pub trait DeformationField {
             &mut topology_manager.protected_vertices,
         );
 
-        let mut vertex_to_weight = HashMap::new();
+        let mut vertex_to_weight: HashMap<VertexId, f32>;
 
         for _ in 0..steps as usize {
             mesh_graph.optimize_bvh_incremental();
@@ -187,6 +187,8 @@ pub trait DeformationField {
         }
 
         mesh_graph.refit_bvh();
+
+        vertex_to_weight
     }
 }
 

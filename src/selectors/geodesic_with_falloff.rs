@@ -1,4 +1,6 @@
-use hashbrown::{HashMap, HashSet};
+use std::{cmp::Reverse, collections::BinaryHeap};
+
+use hashbrown::HashMap;
 
 use mesh_graph::MeshGraph;
 use tracing::{error, instrument};
@@ -6,6 +8,23 @@ use tracing::{error, instrument};
 use crate::ray::FaceIntersection;
 
 use super::{FalloffFn, MeshSelector, WeightedSelection, sphere_with_falloff_weight};
+
+#[derive(PartialEq)]
+struct FloatOrd(f32);
+
+impl Eq for FloatOrd {}
+
+impl PartialOrd for FloatOrd {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for FloatOrd {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.total_cmp(&other.0)
+    }
+}
 
 /// Generates a selection on the surface of a mesh that is within a sphere with a falloff and that
 /// is limited to be connected to the input face.
@@ -47,49 +66,62 @@ impl MeshSelector for GeodesicWithFalloff {
 
         let max_dist = self.radius + self.falloff;
 
-        let mut vertex_to_distance = HashMap::new();
+        let mut vertex_to_distance: HashMap<_, f32> = HashMap::new();
+        let mut heap: BinaryHeap<Reverse<(FloatOrd, _)>> = BinaryHeap::new();
 
-        let mut new_vertices = HashSet::new();
-
-        if let Some(he) = mesh_graph.halfedges.get(input_face.halfedge) {
-            new_vertices.insert(he.end_vertex);
-            vertex_to_distance.insert(he.end_vertex, 0.0);
-        } else {
-            error!("Halfedge not found");
+        for he_id in input_face.halfedges(mesh_graph) {
+            let Some(he) = mesh_graph.halfedges.get(he_id) else {
+                error!("Halfedge not found");
+                continue;
+            };
+            let v_id = he.end_vertex;
+            let Some(&pos) = mesh_graph.positions.get(v_id) else {
+                error!("Vertex position not found");
+                continue;
+            };
+            let dist = face_intersection.point.distance(pos);
+            if dist <= max_dist {
+                vertex_to_distance.insert(v_id, dist);
+                heap.push(Reverse((FloatOrd(dist), v_id)));
+            }
         }
 
-        while !new_vertices.is_empty() {
-            let mut new_new_vertices = HashSet::new();
+        while let Some(Reverse((FloatOrd(dist), v_id))) = heap.pop() {
+            if vertex_to_distance
+                .get(&v_id)
+                .copied()
+                .unwrap_or(f32::INFINITY)
+                < dist
+            {
+                continue;
+            }
 
-            for v_id in new_vertices {
-                let vertex = match mesh_graph.vertices.get(v_id) {
-                    Some(vertex) => vertex,
-                    None => {
-                        error!("Vertex not found");
-                        continue;
-                    }
+            let vertex = match mesh_graph.vertices.get(v_id) {
+                Some(vertex) => vertex,
+                None => {
+                    error!("Vertex not found");
+                    continue;
+                }
+            };
+
+            for he_id in vertex.outgoing_halfedges(mesh_graph) {
+                let Some(he) = mesh_graph.halfedges.get(he_id) else {
+                    error!("Halfedge not found");
+                    continue;
                 };
 
-                let dist = vertex_to_distance[&v_id];
-
-                for he_id in vertex.outgoing_halfedges(mesh_graph) {
-                    let Some(he) = mesh_graph.halfedges.get(he_id) else {
-                        error!("Halfedge not found");
-                        continue;
-                    };
-
-                    if !vertex_to_distance.contains_key(&he.end_vertex) {
-                        let new_dist = dist + he.length(mesh_graph);
-
-                        if new_dist <= max_dist {
-                            new_new_vertices.insert(he.end_vertex);
-                            vertex_to_distance.insert(he.end_vertex, new_dist);
-                        }
+                let new_dist = dist + he.length(mesh_graph);
+                if new_dist <= max_dist {
+                    let current = vertex_to_distance
+                        .get(&he.end_vertex)
+                        .copied()
+                        .unwrap_or(f32::INFINITY);
+                    if new_dist < current {
+                        vertex_to_distance.insert(he.end_vertex, new_dist);
+                        heap.push(Reverse((FloatOrd(new_dist), he.end_vertex)));
                     }
                 }
             }
-
-            new_vertices = new_new_vertices;
         }
 
         WeightedSelection {

@@ -52,7 +52,6 @@ pub struct SculptParams {
     pub min_edge_length_squared: f32,
 
     /// In the Freestyle paper referred to as `d_detail`
-    #[cfg_attr(feature = "serde", serde(skip))]
     pub max_edge_length_squared: f32,
 
     /// In the Freestyle paper referred to as `d_thickness`.
@@ -105,6 +104,6 @@ impl SculptParams {
                 .collect_vec(),
         );
 
-        Self::new((edge_length * 1.5).max(min_edge_length))
+        Self::new(edge_length.max(min_edge_length))
     }
 }

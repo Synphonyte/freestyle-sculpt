@@ -15,10 +15,6 @@ It is based on the paper [Freestyle: Sculpting meshes with self-adaptive topolog
 
 Please check out the [bevy-basic-sculpt example](https://github.com/Synphonyte/freestyle-sculpt/tree/main/examples/bevy-basic-sculpt) to see how it can be used in an interactive application.
 
-### Limitations
-
-At the moment it doesn't support topology genus changes, i.e. no splitting or merging of different parts of the mesh.
-
 ### Optional Cargo features
 
 - `rerun`: Enables recording of the mesh graph and the different algorithms to [Rerun](https://rerun.io/) for visualization.

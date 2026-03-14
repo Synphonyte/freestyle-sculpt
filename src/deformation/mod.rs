@@ -30,10 +30,10 @@ pub fn cleanup_mesh(
             &mut topology_manager.protected_vertices,
         );
 
-        topology_manager.sync_mesh_graph(mesh_graph, &params);
+        topology_manager.sync_mesh_graph(mesh_graph, params);
 
         if topology_manager
-            .update_collisions_and_merge(mesh_graph, &params)
+            .update_collisions_and_merge(mesh_graph, params)
             .is_none()
         {
             break;

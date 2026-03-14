@@ -221,23 +221,7 @@ impl<'a> PhysicsHooks for TopologyPhysicsHooks<'a> {
                 return false;
             };
 
-            if norm_1.dot(norm_2) > 0.3 {
-                #[cfg(feature = "rerun")]
-                TopologyManager::log_colliders_rerun(
-                    "collision_filter/rejected_normals",
-                    [collider1, collider2],
-                );
-
-                false
-            } else {
-                #[cfg(feature = "rerun")]
-                TopologyManager::log_colliders_rerun(
-                    "collision_filter/accepted",
-                    [collider1, collider2],
-                );
-
-                true
-            }
+            norm_1.dot(norm_2) <= 0.3
         }
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "freestyle-sculpt"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 description = "Dyntopo real-time 3D sculpting in Rust"
 readme = "README.md"
@@ -16,13 +16,13 @@ bevy = { version = "0.18", default-features = false, optional = true }
 cfg-if = { version = "1", optional = true }
 derive_more = { version = "2", features = ["deref", "deref_mut"] }
 glam = "0.30"
-hashbrown = "0.16"
+hashbrown = "0.17"
 itertools = "0.14"
 lazy_static = { version = "1.5.0", optional = true }
-mesh-graph = { version = "0.5" }
+mesh-graph = { version = "0.6" }
 parry3d = "0.26"
 rapier3d = "0.32"
-rerun = { version = "0.30", default-features = false, optional = true }
+rerun = { version = "0.31", default-features = false, optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 slotmap = "1"
 tracing = { version = "0.1", features = ["release_max_level_off"] }

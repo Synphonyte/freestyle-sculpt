@@ -1,34 +1,34 @@
 [package]
-name = "freestyle-sculpt"
-version = "0.7.0"
-edition = "2024"
+categories = ["algorithms", "graphics", "mathematics"]
 description = "Dyntopo real-time 3D sculpting in Rust"
+edition = "2024"
+exclude = ["examples/", "tests/"]
+keywords = ["3D", "mesh", "real-time", "sculpting", "topology"]
+license = "MIT"
+name = "freestyle-sculpt"
 readme = "README.md"
 repository = "https://github.com/Synphonyte/freestyle-sculpt"
-license = "MIT"
-keywords = ["3D", "mesh", "real-time", "sculpting", "topology"]
-categories = ["algorithms", "graphics", "mathematics"]
-exclude = ["examples/", "tests/"]
+version = "0.8.0"
 
 [dependencies]
 anyhow = "1"
 bevy = { version = "0.18", default-features = false, optional = true }
 cfg-if = { version = "1", optional = true }
 derive_more = { version = "2", features = ["deref", "deref_mut"] }
-glam = "0.30"
+glam = "0.33"
 hashbrown = "0.17"
-itertools = "0.14"
-lazy_static = { version = "1.5.0", optional = true }
-mesh-graph = { version = "0.6" }
-parry3d = "0.26"
-rapier3d = "0.32"
-rerun = { version = "0.31", default-features = false, optional = true }
+itertools = "0.15"
+lazy_static = { version = "1.5", optional = true }
+mesh-graph = { version = "0.7", path = "../mesh-graph" }
+parry3d = "0.28"
+rapier3d = { version = "0.32", git = "https://github.com/dimforge/rapier" }
+rerun = { version = "0.33", default-features = false, optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 slotmap = "1"
 tracing = { version = "0.1", features = ["release_max_level_off"] }
 
 [features]
-default = []
 bevy = ["dep:bevy", "mesh-graph/bevy"]
+default = []
 rerun = ["dep:cfg-if", "dep:lazy_static", "dep:rerun", "mesh-graph/rerun"]
 serde = ["dep:serde", "glam/serde", "mesh-graph/serde"]

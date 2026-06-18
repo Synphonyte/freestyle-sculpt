@@ -5,7 +5,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.0] - 2026-06-17
 
-- Updated dependencies rerun, mesh-graph, parry3d, glam and itertools
+- Updated dependencies rerun, mesh-graph, parry3d, rapier, glam and itertools
 
 ## [0.7.0] - 2026-04-10
 

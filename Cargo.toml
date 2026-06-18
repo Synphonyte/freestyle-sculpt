@@ -19,9 +19,9 @@ glam = "0.33"
 hashbrown = "0.17"
 itertools = "0.15"
 lazy_static = { version = "1.5", optional = true }
-mesh-graph = { version = "0.7", path = "../mesh-graph" }
+mesh-graph = { version = "0.7" }
 parry3d = "0.28"
-rapier3d = { version = "0.32", git = "https://github.com/dimforge/rapier" }
+rapier3d = { version = "0.33" }
 rerun = { version = "0.33", default-features = false, optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 slotmap = "1"

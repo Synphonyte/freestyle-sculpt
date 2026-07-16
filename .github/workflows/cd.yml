@@ -28,7 +28,7 @@ jobs:
         run: cargo clippy --tests -- -D warnings
 
       - name: Install Cargo Rdme
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.83.0
         with:
           tool: cargo-rdme
       - name: Check if the README is up to date.

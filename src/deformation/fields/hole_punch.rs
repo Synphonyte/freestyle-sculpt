@@ -62,7 +62,13 @@ pub fn punch_hole(
         ]
     }));
 
-    loop {
+    // Upper bound so the loop terminates even when moving along the negative normal never
+    // changes the projected position (e.g. view direction tangent to the surface).
+    const MAX_PUNCH_ITERATIONS: usize = 1000;
+
+    let mut converged = false;
+
+    for _ in 0..MAX_PUNCH_ITERATIONS {
         let mut vertex_ids = HashSet::new();
 
         for face_idx in mesh_graph.bvh.intersect_aabb(&aabb) {
@@ -79,6 +85,7 @@ pub fn punch_hole(
         }
 
         if vertex_ids.is_empty() {
+            converged = true;
             break;
         }
 
@@ -125,6 +132,7 @@ pub fn punch_hole(
         }
 
         if !changed {
+            converged = true;
             break;
         }
 
@@ -133,6 +141,10 @@ pub fn punch_hole(
 
         #[cfg(feature = "rerun")]
         mesh_graph.log_rerun();
+    }
+
+    if !converged {
+        error!("punch_hole did not converge after {MAX_PUNCH_ITERATIONS} iterations");
     }
 
     mesh_graph.apply_transform(obj_to_camera_isometry.inverse());

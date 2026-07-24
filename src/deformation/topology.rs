@@ -140,6 +140,24 @@ impl TopologyManager {
                 #[cfg(feature = "rerun")]
                 mesh_graph.log_rerun();
 
+                // A failed merge (e.g. degenerate one-rings) leaves the mesh unchanged and
+                // returns a default (all-empty) result.
+                let merge_failed = merged.removed_vertices.is_empty()
+                    && merged.removed_halfedges.is_empty()
+                    && merged.removed_faces.is_empty()
+                    && merged.added_vertices.is_empty()
+                    && merged.added_halfedges.is_empty()
+                    && merged.added_faces.is_empty();
+
+                if merge_failed {
+                    // Protect the pair so it isn't retried forever and keep looking for
+                    // another mergeable pair.
+                    error!("Merging {v_id1:?} and {v_id2:?} failed; protecting the pair");
+                    self.protected_vertices.insert(v_id1);
+                    self.protected_vertices.insert(v_id2);
+                    continue;
+                }
+
                 return Some(merged);
             }
         }

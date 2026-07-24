@@ -9,12 +9,16 @@ pub use traits::*;
 
 use crate::SculptParams;
 
+/// Upper bound on cleanup iterations to guarantee termination even if collapse, subdivision
+/// and collision merging keep producing new work for each other.
+const MAX_CLEANUP_ITERATIONS: usize = 1000;
+
 pub fn cleanup_mesh(
     mesh_graph: &mut MeshGraph,
     params: &SculptParams,
     topology_manager: &mut TopologyManager,
 ) {
-    loop {
+    for _ in 0..MAX_CLEANUP_ITERATIONS {
         #[cfg(feature = "rerun")]
         mesh_graph.log_rerun();
 
@@ -36,7 +40,9 @@ pub fn cleanup_mesh(
             .update_collisions_and_merge(mesh_graph, params)
             .is_none()
         {
-            break;
+            return;
         }
     }
+
+    tracing::error!("cleanup_mesh did not converge after {MAX_CLEANUP_ITERATIONS} iterations");
 }

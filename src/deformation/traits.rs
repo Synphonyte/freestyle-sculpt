@@ -183,7 +183,7 @@ pub trait DeformationField {
 
         for &v_id in vertex_to_weight.keys() {
             mesh_graph.vertex_normals.as_mut().unwrap()[v_id] =
-                mesh_graph.vertex_normals.as_ref().unwrap()[v_id].normalize()
+                mesh_graph.vertex_normals.as_ref().unwrap()[v_id].normalize_or_zero()
         }
 
         mesh_graph.refit_bvh();

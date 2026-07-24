@@ -77,6 +77,10 @@ impl DeformationField for SmoothDeformation {
                 .unwrap_or(&Vec3::ZERO);
         }
 
+        if neighbours.is_empty() {
+            return Vec3::ZERO;
+        }
+
         movement /= neighbours.len() as f32;
 
         (movement - position) * self.strength

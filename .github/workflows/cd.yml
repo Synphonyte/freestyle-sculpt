@@ -27,13 +27,14 @@ jobs:
       - name: Clippy
         run: cargo clippy --tests -- -D warnings
 
-      - name: Install Cargo Rdme
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-rdme
-      - name: Check if the README is up to date.
-        run: |
-          cargo rdme --check
+      # TODO : once intralink is fixed on nightly, re-enable this
+      # - name: Install Cargo Rdme
+      #   uses: taiki-e/install-action@v2
+      #   with:
+      #     tool: cargo-rdme
+      # - name: Check if the README is up to date.
+      #   run: |
+      #     cargo rdme --check
 
       - name: Run tests
         run: cargo test

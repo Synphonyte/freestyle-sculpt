@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { version = "0.18", default-features = false, optional = true }
+bevy = { version = "0.19", default-features = false, optional = true }
 freestyle-sculpt = { path = ".." }
-mesh-graph = { path = "../../mesh-graph" }
+mesh-graph = "0.8"
 serde = { version = "1", features = ["derive"] }
 
 [workspace]
@@ -16,7 +16,8 @@ members = ["bevy-basic-sculpt", "log-viewer"]
 [workspace.dependencies]
 examples = { path = "." }
 freestyle-sculpt = { path = ".." }
-mesh-graph = { path = "../../mesh-graph" }
+glam = "0.33"
+mesh-graph = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

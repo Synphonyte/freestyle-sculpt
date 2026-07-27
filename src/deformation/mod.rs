@@ -17,7 +17,10 @@ pub fn cleanup_mesh(
     mesh_graph: &mut MeshGraph,
     params: &SculptParams,
     topology_manager: &mut TopologyManager,
+    allow_topology_change: bool,
 ) {
+    let mut protected_vertices_count = topology_manager.protected_vertices.len();
+
     for _ in 0..MAX_CLEANUP_ITERATIONS {
         #[cfg(feature = "rerun")]
         mesh_graph.log_rerun();
@@ -34,13 +37,21 @@ pub fn cleanup_mesh(
             &mut topology_manager.protected_vertices,
         );
 
-        topology_manager.sync_mesh_graph(mesh_graph, params);
+        if allow_topology_change {
+            topology_manager.sync_mesh_graph(mesh_graph, params);
 
-        if topology_manager
-            .update_collisions_and_merge(mesh_graph, params)
-            .is_none()
-        {
-            return;
+            if topology_manager
+                .update_collisions_and_merge(mesh_graph, params)
+                .is_none()
+            {
+                return;
+            }
+        } else {
+            let new_count = topology_manager.protected_vertices.len();
+            if new_count == protected_vertices_count {
+                break;
+            }
+            protected_vertices_count = new_count;
         }
     }
 

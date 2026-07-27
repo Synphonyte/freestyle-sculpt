@@ -3,6 +3,13 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-07-27
+
+- Updated dependencies `mesh-graph`, `bevy`, `parry3d` and `rapier3d`
+- `cleanup_mesh` now has the option to ignore topology changes
+- The trait `DeformationField` has now a method `allow_topology_change` that returns `true` by default.
+  - The `SmoothDeformation` now ignores topology changes by returning `false` from `allow_topology_change`.
+
 ## [0.8.1] - 2026-07-27
 
 - Safeguards against infinite loops

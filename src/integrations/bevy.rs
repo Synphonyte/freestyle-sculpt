@@ -5,8 +5,8 @@ use crate::ray::Ray;
 impl From<Ray3d> for Ray {
     fn from(ray: Ray3d) -> Self {
         Self {
-            origin: ray.origin,
-            direction: ray.direction.into(),
+            origin: glam::Vec3::new(ray.origin.x, ray.origin.y, ray.origin.z),
+            direction: glam::Vec3::new(ray.direction.x, ray.direction.y, ray.direction.z),
         }
     }
 }

@@ -52,14 +52,14 @@ pub fn handle_mouse(
     mut log: ResMut<Log>,
     picking_cameras: Query<&Camera>,
     mut mesh_graphs: Query<(&mut MeshGraph, &Mesh3d)>,
-    mut prev_point: Local<Vec3>,
+    mut prev_point: Local<glam::Vec3>,
     mut deformation_active: Local<bool>,
 ) -> Result {
     let (mut mesh_graph, mesh_handle) = mesh_graphs.single_mut()?;
 
     mesh_graph.optimize_bvh_incremental();
 
-    let mesh = meshes.get_mut(mesh_handle).unwrap();
+    let mut mesh = meshes.get_mut(mesh_handle).unwrap();
 
     let mut available_deformations = available_deformations.get_mut(**current_deformation);
     let deformation_field = available_deformations.as_mut().unwrap();

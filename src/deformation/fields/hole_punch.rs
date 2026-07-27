@@ -136,7 +136,7 @@ pub fn punch_hole(
             break;
         }
 
-        cleanup_mesh(mesh_graph, params, topology_manager);
+        cleanup_mesh(mesh_graph, params, topology_manager, true);
         mesh_graph.compute_vertex_normals();
 
         #[cfg(feature = "rerun")]

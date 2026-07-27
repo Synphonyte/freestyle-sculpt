@@ -24,14 +24,14 @@ fn main() {
         .insert_resource(ClearColor(BLACK.into()))
         .init_resource::<GlobalAmbientLight>()
         .insert_resource(SculptParams::new(1.0))
-        .insert_non_send_resource(AvailableDeformations::new(vec![
+        .insert_non_send(AvailableDeformations::new(vec![
             Box::new(ErodeDilateDeformation::new(0.2)),
             Box::new(ErodeDilateDeformation::new(-10.0)),
             Box::new(TranslateDeformation::new()),
             Box::new(SmoothDeformation::new(0.1)),
         ]))
         .init_resource::<CurrentDeformation>()
-        .insert_non_send_resource(AvailableSelections::new(vec![
+        .insert_non_send(AvailableSelections::new(vec![
             Box::new(GeodesicWithFalloff::sphere(1.5, 1.5, SMOOTH_FALLOFF)),
             Box::new(DistanceWithFalloff::sphere(1.5, 1.5, SMOOTH_FALLOFF)),
         ]))
@@ -47,7 +47,8 @@ fn main() {
             Update,
             (
                 handle_mouse.run_if(
-                    input_pressed(MouseButton::Left).or(input_just_released(MouseButton::Left)),
+                    input_pressed(MouseButton::Left)
+                        .or_else(input_just_released(MouseButton::Left)),
                 ),
                 cycle_deformation_mode.run_if(input_just_pressed(KeyCode::KeyD)),
                 cycle_selection_mode.run_if(input_just_pressed(KeyCode::KeyS)),

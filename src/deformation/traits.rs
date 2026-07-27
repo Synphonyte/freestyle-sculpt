@@ -48,6 +48,15 @@ pub trait DeformationField {
 
     fn update_intersection(&mut self, mesh_graph: &MeshGraph);
 
+    /// Returns whether the deformation should allow topology changes. Disable for performance boost but
+    /// only if you know the deformation will not affect topology.
+    ///
+    /// By default, returns `true`.
+    #[inline(always)]
+    fn allow_topology_change(&self) -> bool {
+        true
+    }
+
     /// This computes the maximum vertex movement of all the affected vertices.
     /// Used to determine the number of steps needed to apply the deformation.
     #[instrument(skip_all)]
@@ -136,7 +145,12 @@ pub trait DeformationField {
                 mesh_graph.positions[v_id] = pos + movement * factor;
             }
 
-            cleanup_mesh(mesh_graph, &params, topology_manager);
+            cleanup_mesh(
+                mesh_graph,
+                &params,
+                topology_manager,
+                self.allow_topology_change(),
+            );
         }
 
         let mut affected_face_ids = HashSet::new();

@@ -87,4 +87,8 @@ impl DeformationField for SmoothDeformation {
     }
 
     impl_deformation_field_boilerplate!();
+
+    fn allow_topology_change(&self) -> bool {
+        false
+    }
 }

@@ -13,14 +13,14 @@ pub fn setup(
         ResMut<Assets<Mesh>>,
         ResMut<Assets<StandardMaterial>>,
     )>,
-) {
+) -> Result<()> {
     let (mesh, mut mesh_graph) = init_icosphere();
     mesh_graph.compute_vertex_normals();
 
-    world.insert_non_send_resource(TopologyManager::new(&mesh_graph, *world.resource()));
+    world.insert_non_send(TopologyManager::new(&mesh_graph, *world.resource()));
     world.insert_resource(Log::new(&mesh_graph));
 
-    let (mut commands, mut meshes, mut materials) = params.get_mut(world);
+    let (mut commands, mut meshes, mut materials) = params.get_mut(world)?;
 
     commands.spawn((
         Mesh3d(meshes.add(mesh)),
@@ -51,6 +51,8 @@ pub fn setup(
     ));
 
     params.apply(world);
+
+    Ok(())
 }
 
 fn init_icosphere() -> (Mesh, MeshGraph) {

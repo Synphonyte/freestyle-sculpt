@@ -22,7 +22,7 @@ lazy_static = { version = "1.5", optional = true }
 mesh-graph = { version = "0.8" }
 parry3d = "0.29"
 rapier3d = { version = "0.34" }
-rerun = { version = "0.33", default-features = false, optional = true }
+rerun = { version = "0.35", default-features = false, optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 slotmap = "1"
 tracing = { version = "0.1", features = ["release_max_level_off"] }

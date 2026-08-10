@@ -20,7 +20,7 @@ hashbrown = "0.17"
 itertools = "0.15"
 lazy_static = { version = "1.5", optional = true }
 mesh-graph = { version = "0.8" }
-parry3d = "0.29"
+parry3d = "0.30"
 rapier3d = { version = "0.34" }
 rerun = { version = "0.33", default-features = false, optional = true }
 serde = { version = "1", features = ["derive"], optional = true }

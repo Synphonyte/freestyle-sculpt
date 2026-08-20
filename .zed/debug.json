@@ -1,0 +1,20 @@
+[
+  {
+    "label": "Debug cargo tests",
+    "adapter": "CodeLLDB",
+    "sourceLanguages": ["rust"],
+    "build": {
+      "command": "cargo",
+      "args": ["test", "--no-run"]
+    }
+  },
+  {
+    "label": "Debug test: log_006",
+    "adapter": "CodeLLDB",
+    "sourceLanguages": ["rust"],
+    "build": {
+      "command": "cargo",
+      "args": ["test", "--no-run", "--features", "serde,gltf", "--", "log_006"]
+    }
+  }
+]

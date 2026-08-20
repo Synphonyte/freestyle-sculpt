@@ -53,6 +53,7 @@ impl DeformationField for SmoothDeformation {
         _mesh_graph: &MeshGraph,
         _selector: &dyn MeshSelector,
         _strength: f32,
+        _intersection: &FaceIntersection,
     ) -> f32 {
         // always return 0.0 because this operation can't lead to invalid topology so we don't need to subdivide it's movements
         0.0

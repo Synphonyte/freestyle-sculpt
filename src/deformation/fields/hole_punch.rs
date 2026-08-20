@@ -2,7 +2,7 @@ use glam::{Mat4, Vec3Swizzles};
 use hashbrown::HashSet;
 use mesh_graph::{MeshGraph, Polygon2};
 use parry3d::bounding_volume::Aabb;
-use tracing::{error, instrument};
+use tracing::{error, instrument, warn};
 
 use crate::{
     SculptParams,
@@ -34,6 +34,11 @@ pub fn punch_hole(
     params: &SculptParams,
     topology_manager: &mut TopologyManager,
 ) {
+    if hole_shape.vertices.is_empty() {
+        warn!("Hole shape is empty => skipping punch_hole");
+        return;
+    }
+
     mesh_graph.apply_transform(obj_to_camera_isometry);
     mesh_graph.rebuild_bvh();
 
@@ -72,7 +77,12 @@ pub fn punch_hole(
         let mut vertex_ids = HashSet::new();
 
         for face_idx in mesh_graph.bvh.intersect_aabb(&aabb) {
-            let face_id = mesh_graph.index_to_face_id[&face_idx];
+            // The BVH can contain stale entries for faces removed during cleanup,
+            // so look the face id up defensively instead of indexing.
+            let Some(&face_id) = mesh_graph.index_to_face_id.get(&face_idx) else {
+                error!("Face index not found");
+                continue;
+            };
 
             let Some(face) = mesh_graph.faces.get(face_id) else {
                 error!("Face not found");
@@ -104,7 +114,8 @@ pub fn punch_hole(
             };
 
             if hole_shape.contains_point(projection.project_point3(*pos).xy()) {
-                let Some(&normal) = mesh_graph.vertex_normals.as_ref().unwrap().get(v_id) else {
+                let Some(&normal) = mesh_graph.vertex_normals.as_ref().and_then(|n| n.get(v_id))
+                else {
                     error!("Vertex normal not found");
                     continue;
                 };

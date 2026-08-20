@@ -1,0 +1,26 @@
+// Project tasks configuration. See https://zed.dev/docs/tasks for documentation.
+[
+	{
+		"label": "cargo test (gltf,serde)",
+		"command": "cargo",
+		"args": [
+			"test",
+			"--features",
+			"gltf,serde",
+			//	"--release",
+			"log_002"
+		],
+		"env": {
+			"RUST_LOG": "error",
+			"RUST_BACKTRACE": "1"
+		},
+		"use_new_terminal": false,
+		"allow_concurrent_runs": false,
+		"reveal": "always",
+		"reveal_target": "dock",
+		"hide": "never",
+		"shell": "system",
+		"show_summary": true,
+		"show_command": true
+	}
+]

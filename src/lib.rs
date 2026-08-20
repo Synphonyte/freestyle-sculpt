@@ -75,10 +75,26 @@ impl SculptParams {
     ///
     /// All other parameters are calculated based on the maximum edge length.
     pub fn new(max_edge_length: f32) -> Self {
-        Self::from_max_edge_length_squared(max_edge_length * max_edge_length)
+        debug_assert!(
+            max_edge_length > 0.0 && max_edge_length.is_finite(),
+            "max_edge_length must be a finite, positive value, got {max_edge_length}"
+        );
+
+        let max_edge_length_squared = max_edge_length * max_edge_length;
+        debug_assert!(
+            max_edge_length_squared > 0.0 && max_edge_length_squared.is_finite(),
+            "max_edge_length squared must be a finite, positive value, got {max_edge_length}"
+        );
+
+        Self::from_max_edge_length_squared(max_edge_length_squared)
     }
 
     fn from_max_edge_length_squared(max_edge_length_squared: f32) -> Self {
+        debug_assert!(
+            max_edge_length_squared > 0.0 && max_edge_length_squared.is_finite(),
+            "max_edge_length_squared must be a finite, positive value, got {max_edge_length_squared}"
+        );
+
         let max_move_dist_squared = max_edge_length_squared * 0.11;
         let max_thickness_squared = 4.0 * max_move_dist_squared + max_edge_length_squared * 0.35;
 
@@ -92,14 +108,22 @@ impl SculptParams {
     }
 
     pub fn from_mesh_graph(mesh_graph: &MeshGraph, min_edge_length: f32) -> Self {
-        let edge_length = median(
-            &mut mesh_graph
-                .halfedges
-                .values()
-                .map(|he| he.length(mesh_graph))
-                .collect_vec(),
-        );
+        let mut edge_lengths = mesh_graph
+            .halfedges
+            .values()
+            .map(|he| he.length(mesh_graph))
+            // parry's `median` panics on NaN values, so filter out non-finite lengths
+            .filter(|l| l.is_finite())
+            .collect_vec();
 
-        Self::new(edge_length.max(min_edge_length))
+        // `median` panics on an empty slice (e.g. a mesh without halfedges)
+        if edge_lengths.is_empty() {
+            return Self::new(min_edge_length);
+        }
+
+        Self::new(median(&mut edge_lengths).max(min_edge_length))
     }
 }
+
+#[cfg(test)]
+mod tests;

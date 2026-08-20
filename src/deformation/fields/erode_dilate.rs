@@ -44,6 +44,7 @@ impl DeformationField for ErodeDilateDeformation {
         _mesh_graph: &MeshGraph,
         _selector: &dyn MeshSelector,
         _strength: f32,
+        _intersection: &FaceIntersection,
     ) -> f32 {
         self.amount * self.amount
     }

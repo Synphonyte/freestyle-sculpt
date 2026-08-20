@@ -20,9 +20,9 @@ hashbrown = "0.17"
 itertools = "0.15"
 lazy_static = { version = "1.5", optional = true }
 mesh-graph = { version = "0.8" }
-parry3d = "0.29"
-rapier3d = { version = "0.34" }
-rerun = { version = "0.33", default-features = false, optional = true }
+parry3d = "0.30"
+rapier3d = { version = "0.35" }
+rerun = { version = "0.36", default-features = false, optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 slotmap = "1"
 tracing = { version = "0.1", features = ["release_max_level_off"] }
@@ -32,3 +32,11 @@ bevy = ["dep:bevy", "mesh-graph/bevy"]
 default = []
 rerun = ["dep:cfg-if", "dep:lazy_static", "dep:rerun", "mesh-graph/rerun"]
 serde = ["dep:serde", "glam/serde", "mesh-graph/serde"]
+gltf = ["mesh-graph/gltf"]
+
+[dev-dependencies]
+serde_json = "1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[patch.crates-io]
+mesh-graph.path = "../mesh-graph"

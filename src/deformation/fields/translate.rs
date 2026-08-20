@@ -78,6 +78,7 @@ impl DeformationField for TranslateDeformation {
         _mesh_graph: &MeshGraph,
         _selector: &dyn MeshSelector,
         strength: f32,
+        _intersection: &FaceIntersection,
     ) -> f32 {
         self.translation.length_squared() * strength
     }

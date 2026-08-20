@@ -1,0 +1,2 @@
+*.glb filter=lfs diff=lfs merge=lfs -text
+src/tests/logs/*.json filter=lfs diff=lfs merge=lfs -text

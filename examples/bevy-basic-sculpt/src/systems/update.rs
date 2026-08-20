@@ -111,7 +111,7 @@ pub fn handle_mouse(
             mesh_graph.compute_vertex_normals();
         } else {
             // Mouse move
-            if *deformation_active {
+            if *deformation_active && ray.direction.z.abs() > f32::EPSILON {
                 // o.z + d.z * t = p.z
                 // t = (p.z - o.z) / d.z
                 let cur_point = ray.point_at((prev_point.z - ray.origin.z) / ray.direction.z);

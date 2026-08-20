@@ -3,6 +3,7 @@ use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
 use mesh_graph::{MeshGraph, VertexId};
 use parry3d::query::PointQueryWithLocation;
+use slotmap::SecondaryMap;
 use tracing::{error, instrument};
 
 use crate::deformation::{TopologyManager, cleanup_mesh};
@@ -65,9 +66,9 @@ pub trait DeformationField {
         mesh_graph: &MeshGraph,
         selector: &dyn MeshSelector,
         strength: f32,
+        intersection: &FaceIntersection,
     ) -> f32 {
-        let WeightedSelection { vertex_to_weight } =
-            selector.select(mesh_graph, self.intersection().unwrap());
+        let WeightedSelection { vertex_to_weight } = selector.select(mesh_graph, intersection);
 
         let mut max_movement_squared: f32 = 0.0;
 
@@ -97,12 +98,20 @@ pub trait DeformationField {
         params: SculptParams,
         topology_manager: &mut TopologyManager,
     ) -> HashMap<VertexId, f32> {
-        let max_movement_squared = self.max_movement_squared(mesh_graph, selector, strength);
+        const MAX_STEP_COUNT: f32 = 100.0;
+
+        let Some(intersection) = self.intersection() else {
+            error!("Intersection should be set before calling `apply` on the DeformationField");
+            return HashMap::new();
+        };
+
+        let max_movement_squared =
+            self.max_movement_squared(mesh_graph, selector, strength, intersection);
 
         let steps = (max_movement_squared / params.max_move_dist_squared)
             .sqrt()
             .ceil()
-            .max(1.0);
+            .clamp(1.0, MAX_STEP_COUNT);
 
         let factor = 1.0 / steps;
 
@@ -129,9 +138,14 @@ pub trait DeformationField {
 
             self.update_intersection(mesh_graph);
 
-            vertex_to_weight = selector
-                .select(mesh_graph, self.intersection().unwrap())
-                .vertex_to_weight;
+            let Some(intersection) = self.intersection() else {
+                error!(
+                    "Couldn't find intersection even after calling `update_intersection` on the DeformationField"
+                );
+                return HashMap::new();
+            };
+
+            vertex_to_weight = selector.select(mesh_graph, intersection).vertex_to_weight;
 
             for (&v_id, &weight) in &vertex_to_weight {
                 let Some(&pos) = mesh_graph.positions.get(v_id) else {
@@ -157,13 +171,29 @@ pub trait DeformationField {
 
         self.update_intersection(mesh_graph);
 
-        vertex_to_weight = selector
-            .select(mesh_graph, self.intersection().unwrap())
-            .vertex_to_weight;
+        let Some(intersection) = self.intersection() else {
+            error!(
+                "Couldn't find intersection even after calling `update_intersection` on the DeformationField"
+            );
+            return HashMap::new();
+        };
+
+        vertex_to_weight = selector.select(mesh_graph, intersection).vertex_to_weight;
+
+        if mesh_graph.vertex_normals.is_none() {
+            mesh_graph.vertex_normals = Some(SecondaryMap::new());
+        }
+
+        let mut invalid_vertex_ids = vec![];
 
         for &v_id in vertex_to_weight.keys() {
-            // just check above
-            let v = mesh_graph.vertices[v_id];
+            // A custom `MeshSelector` is free to return vertex ids that are no longer
+            // part of the mesh, so look the vertex up defensively instead of indexing.
+            let Some(v) = mesh_graph.vertices.get(v_id) else {
+                error!("Vertex not found");
+                invalid_vertex_ids.push(v_id);
+                continue;
+            };
 
             affected_face_ids.extend(v.faces(mesh_graph));
 
@@ -172,6 +202,10 @@ pub trait DeformationField {
                 .as_mut()
                 .unwrap()
                 .insert(v_id, Vec3::ZERO);
+        }
+
+        for v_id in invalid_vertex_ids {
+            vertex_to_weight.remove(&v_id);
         }
 
         for face_id in affected_face_ids {

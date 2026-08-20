@@ -64,8 +64,24 @@ pub fn main() {
 
         let intersection = action.ray.cast_ray_and_get_face_id(&mesh_graph);
 
-        let deformation = &mut deformations[action.deformation];
-        let selector = &selectors[action.selector];
+        // The indices come from an untrusted log file that may have been recorded
+        // with a different set of deformations/selectors, so bounds-check them.
+        let Some(deformation) = deformations.get_mut(action.deformation) else {
+            eprintln!(
+                "Skipping action: deformation index {} is out of range ({})",
+                action.deformation,
+                deformations.len()
+            );
+            continue;
+        };
+        let Some(selector) = selectors.get(action.selector) else {
+            eprintln!(
+                "Skipping action: selector index {} is out of range ({})",
+                action.selector,
+                selectors.len()
+            );
+            continue;
+        };
 
         match action.ty {
             EditActionType::MouseDown => {
@@ -78,6 +94,10 @@ pub fn main() {
                 // do nothing
             }
             EditActionType::MouseMove => {
+                if ray.direction.z.abs() <= f32::EPSILON {
+                    continue;
+                }
+
                 let cur_point = action
                     .ray
                     .point_at((prev_point.z - action.ray.origin.z) / action.ray.direction.z);

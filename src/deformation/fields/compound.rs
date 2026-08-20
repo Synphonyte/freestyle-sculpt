@@ -10,6 +10,12 @@ pub struct CompoundDeformation<const C: usize> {
 
 impl<const C: usize> CompoundDeformation<C> {
     pub fn new(fields: [Box<dyn DeformationField>; C]) -> Self {
+        const {
+            assert!(
+                C > 0,
+                "CompoundDeformation requires at least one deformation field"
+            )
+        };
         CompoundDeformation { fields }
     }
 }
@@ -65,12 +71,13 @@ impl<const C: usize> DeformationField for CompoundDeformation<C> {
         mesh_graph: &MeshGraph,
         selector: &dyn MeshSelector,
         strength: f32,
+        intersection: &FaceIntersection,
     ) -> f32 {
         let mut movement = 0.0;
 
         for field in &self.fields {
             movement += field
-                .max_movement_squared(mesh_graph, selector, strength)
+                .max_movement_squared(mesh_graph, selector, strength, intersection)
                 .sqrt()
         }
 

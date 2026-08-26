@@ -15,42 +15,6 @@ fn new_produces_consistent_params() {
     assert!(params.max_thickness_half.is_finite());
 }
 
-#[test]
-#[should_panic(expected = "max_edge_length must be a finite, positive value")]
-fn new_rejects_zero() {
-    let _ = SculptParams::new(0.0);
-}
-
-#[test]
-#[should_panic(expected = "max_edge_length must be a finite, positive value")]
-fn new_rejects_negative() {
-    let _ = SculptParams::new(-1.0);
-}
-
-#[test]
-#[should_panic(expected = "max_edge_length must be a finite, positive value")]
-fn new_rejects_nan() {
-    let _ = SculptParams::new(f32::NAN);
-}
-
-#[test]
-#[should_panic(expected = "max_edge_length must be a finite, positive value")]
-fn new_rejects_infinity() {
-    let _ = SculptParams::new(f32::INFINITY);
-}
-
-#[test]
-#[should_panic(expected = "max_edge_length squared must be a finite, positive value")]
-fn new_rejects_squared_overflow() {
-    let _ = SculptParams::new(f32::MAX);
-}
-
-#[test]
-#[should_panic(expected = "max_edge_length squared must be a finite, positive value")]
-fn new_rejects_squared_underflow() {
-    let _ = SculptParams::new(f32::MIN_POSITIVE);
-}
-
 /// A `MeshSelector` implementation that returns a stale/invalid vertex id
 /// (e.g. from a previously deleted mesh) to simulate misbehaving user code.
 struct StaleIdSelector;

@@ -33,6 +33,8 @@ impl<const C: usize> DeformationField for CompoundDeformation<C> {
 
     #[inline(always)]
     fn intersection(&self) -> Option<&FaceIntersection> {
+        // the other fields should yield the same intersections. For performance,
+        // we only use the first field's intersection.
         self.fields[0].intersection()
     }
 

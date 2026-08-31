@@ -1,7 +1,10 @@
 use bevy::picking::backend::ray::RayMap;
 use bevy::prelude::*;
 use freestyle_sculpt::ray::Ray;
-use freestyle_sculpt::{SculptParams, deformation::TopologyManager};
+use freestyle_sculpt::{
+    SculptParams,
+    deformation::{TopologyManager, morphological_open_close},
+};
 use mesh_graph::MeshGraph;
 
 use crate::resources::*;
@@ -147,6 +150,36 @@ pub fn handle_mouse(
                 mesh_graph.optimize_bvh_incremental();
             }
         }
+    }
+
+    Ok(())
+}
+
+/// Global morphological open/close on separate keys.
+///
+/// * `KeyO` => open  (erode → dilate, `amount = +0.3`)
+/// * `KeyC` => close (dilate → erode, `amount = -0.3`)
+pub fn handle_morph_open_close(
+    keys: Res<ButtonInput<KeyCode>>,
+    sculpt_params: Res<SculptParams>,
+    mut topology_manager: NonSendMut<TopologyManager>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut mesh_graphs: Query<(&mut MeshGraph, &Mesh3d)>,
+) -> Result {
+    let amount = if keys.just_pressed(KeyCode::KeyO) {
+        0.3
+    } else if keys.just_pressed(KeyCode::KeyC) {
+        -0.3
+    } else {
+        return Ok(());
+    };
+
+    let (mut mesh_graph, mesh_handle) = mesh_graphs.single_mut()?;
+
+    morphological_open_close(&mut mesh_graph, &sculpt_params, &mut topology_manager, amount);
+
+    if let Some(mesh) = meshes.get_mut(mesh_handle) {
+        *mesh = mesh_graph.clone().into();
     }
 
     Ok(())

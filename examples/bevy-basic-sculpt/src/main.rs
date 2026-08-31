@@ -54,6 +54,9 @@ fn main() {
                 cycle_selection_mode.run_if(input_just_pressed(KeyCode::KeyS)),
                 save_log.run_if(input_just_pressed(KeyCode::KeyL)),
                 reset_log.run_if(input_just_pressed(KeyCode::KeyR)),
+                handle_morph_open_close.run_if(
+                    input_just_pressed(KeyCode::KeyO).or(input_just_pressed(KeyCode::KeyC)),
+                ),
             ),
         )
         .run();

@@ -1,8 +1,12 @@
 mod fields;
+#[cfg(feature = "instrumentation")]
+pub(crate) mod journal;
 mod topology;
 mod traits;
 
 pub use fields::*;
+#[cfg(feature = "instrumentation")]
+pub use journal::*;
 use mesh_graph::MeshGraph;
 pub use topology::*;
 pub use traits::*;
@@ -26,11 +30,31 @@ pub fn cleanup_mesh(
         mesh_graph.log_rerun();
 
         // TODO : Optimize: After a collision merge only the affected halfedges should be considered
+        #[cfg(feature = "instrumentation")]
+        {
+            journal::record_step(
+                journal::JournalOp::Collapse {
+                    min_len_sqr: params.min_edge_length_squared,
+                },
+                &topology_manager.protected_vertices,
+                &topology_manager.protected_halfedges,
+            );
+        }
         mesh_graph.collapse_until_edges_above_min_length(
             params.min_edge_length_squared,
             &mut topology_manager.protected_vertices,
         );
 
+        #[cfg(feature = "instrumentation")]
+        {
+            journal::record_step(
+                journal::JournalOp::Subdivide {
+                    max_len_sqr: params.max_edge_length_squared,
+                },
+                &topology_manager.protected_vertices,
+                &topology_manager.protected_halfedges,
+            );
+        }
         mesh_graph.subdivide_until_edges_below_max_length(
             params.max_edge_length_squared,
             &mut topology_manager.protected_halfedges,

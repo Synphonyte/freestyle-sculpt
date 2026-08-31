@@ -4,6 +4,8 @@ use mesh_graph::{MeshGraph, Polygon2};
 use parry3d::bounding_volume::Aabb;
 use tracing::{error, instrument, warn};
 
+#[cfg(feature = "instrumentation")]
+use crate::deformation::journal::{self};
 use crate::{
     SculptParams,
     deformation::{TopologyManager, cleanup_mesh},
@@ -47,11 +49,27 @@ pub fn punch_hole(
 
     let neg_max_move_dist = -params.max_move_dist_squared.sqrt();
 
+    #[cfg(feature = "instrumentation")]
+    journal::record_step(
+        journal::JournalOp::Collapse {
+            min_len_sqr: params.min_edge_length_squared,
+        },
+        &topology_manager.protected_vertices,
+        &topology_manager.protected_halfedges,
+    );
     mesh_graph.collapse_until_edges_above_min_length(
         params.min_edge_length_squared,
         &mut topology_manager.protected_vertices,
     );
 
+    #[cfg(feature = "instrumentation")]
+    journal::record_step(
+        journal::JournalOp::Subdivide {
+            max_len_sqr: params.max_edge_length_squared,
+        },
+        &topology_manager.protected_vertices,
+        &topology_manager.protected_halfedges,
+    );
     mesh_graph.subdivide_until_edges_below_max_length(
         params.max_edge_length_squared,
         &mut topology_manager.protected_halfedges,

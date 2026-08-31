@@ -129,6 +129,18 @@ impl TopologyManager {
                     mesh_graph.log_verts_rerun("merge", &[v_id1, v_id2]);
                 }
 
+                // Each individual merge is one journal step (hunt mode).
+                #[cfg(feature = "instrumentation")]
+                super::journal::record_step(
+                    super::journal::JournalOp::MergeOneRing {
+                        v1: v_id1,
+                        v2: v_id2,
+                        flip_threshold_sqr: sculpt_params.min_edge_length_squared,
+                    },
+                    &self.protected_vertices,
+                    &self.protected_halfedges,
+                );
+
                 let merged = mesh_graph.merge_vertices_one_rings(
                     v_id1,
                     v_id2,

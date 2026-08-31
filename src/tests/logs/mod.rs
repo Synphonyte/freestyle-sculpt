@@ -1,5 +1,7 @@
 mod json;
 
+#[cfg(feature = "instrumentation")]
+use crate::deformation::journal::{self, JournalEntry, JournalOp};
 use crate::{
     SculptParams,
     deformation::{
@@ -99,6 +101,125 @@ fn new_state(logged: &LoggedSculptState, mesh_graph: &MeshGraph) -> SculptState 
         toi: 0.0,
         sculpt_params,
     }
+}
+
+/// Extracts the sculpt params from the first input-log entry (needed to rebuild
+/// a topology manager when resuming from a dumped state).
+#[cfg(feature = "instrumentation")]
+fn logged_sculpt_params_from_log(input_log: &InputLog) -> Option<SculptParams> {
+    let entry = input_log.0.first()?;
+    let logged = match entry {
+        InputLogEntry::PointerDownSlice { state, .. }
+        | InputLogEntry::PointerDownPerspective { state, .. }
+        | InputLogEntry::RemoveWithLasso { state, .. } => state,
+        _ => return None,
+    };
+    Some(SculptParams::new(logged.sculpt_params))
+}
+
+/// Serializes the journal recorded so far into `dir/journal.json` (at most once
+/// per process, matching the once-per-process state dump).
+#[cfg(feature = "instrumentation")]
+fn write_journal(dir: &std::path::Path) {
+    static WRITTEN: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    if WRITTEN.set(()).is_err() {
+        return;
+    }
+    let Some(journal) = journal::journal_entries() else {
+        return;
+    };
+    let path = dir.join("journal.json");
+    match serde_json::to_vec_pretty(&journal) {
+        Ok(bytes) => {
+            if let Err(e) = std::fs::write(&path, bytes) {
+                eprintln!("journal: could not write {}: {e:?}", path.display());
+            } else {
+                eprintln!(
+                    "journal: wrote {} steps to {}",
+                    journal.len(),
+                    path.display()
+                );
+            }
+        }
+        Err(e) => eprintln!("journal: could not serialize: {e:?}"),
+    }
+}
+
+/// Writes the journal next to the dumped state history if a dump happened.
+#[cfg(feature = "instrumentation")]
+fn write_journal_if_dumped() {
+    if let Some(dir) = mesh_graph::state_dump_dir() {
+        write_journal(&dir);
+    }
+}
+
+/// Reads the journal from a dumped state directory.
+#[cfg(feature = "instrumentation")]
+fn load_journal(dir: &std::path::Path) -> Result<Vec<JournalEntry>, String> {
+    let path = dir.join("journal.json");
+    let bytes =
+        std::fs::read(&path).map_err(|e| format!("could not read {}: {e}", path.display()))?;
+    serde_json::from_slice(&bytes).map_err(|e| format!("could not parse {}: {e}", path.display()))
+}
+
+/// Applies the journal steps starting at `skip` (entries `0..skip` are assumed to
+/// be already contained in `mesh_graph`) — the resume path. The topology manager
+/// is rebuilt from the mesh and the journal's marked-set snapshots, mirroring the
+/// original run's per-step state.
+#[cfg(feature = "instrumentation")]
+fn replay_journal(
+    mut mesh_graph: MeshGraph,
+    journal: Vec<JournalEntry>,
+    params: SculptParams,
+    skip: usize,
+) -> Result<(), String> {
+    let mut topology_manager = TopologyManager::new(&mesh_graph, params);
+
+    let mut count: usize = 0;
+    for (i, entry) in journal.into_iter().enumerate().skip(skip) {
+        count += 1;
+        mesh_graph::set_replay_position(i as u64);
+        topology_manager.protected_vertices = entry.marked_vertices.iter().copied().collect();
+        topology_manager.protected_halfedges = entry.marked_halfedges.iter().copied().collect();
+
+        match entry.op {
+            JournalOp::Collapse { min_len_sqr } => {
+                mesh_graph.collapse_until_edges_above_min_length(
+                    min_len_sqr,
+                    &mut topology_manager.protected_vertices,
+                );
+            }
+            JournalOp::Subdivide { max_len_sqr } => {
+                mesh_graph.subdivide_until_edges_below_max_length(
+                    max_len_sqr,
+                    &mut topology_manager.protected_halfedges,
+                    &mut topology_manager.protected_vertices,
+                );
+            }
+            JournalOp::MergeOneRing {
+                v1,
+                v2,
+                flip_threshold_sqr,
+            } => {
+                mesh_graph.merge_vertices_one_rings(
+                    v1,
+                    v2,
+                    flip_threshold_sqr,
+                    &mut topology_manager.protected_halfedges,
+                    &mut topology_manager.protected_vertices,
+                );
+            }
+        }
+    }
+
+    eprintln!(
+        "replayed {count} journal steps (from {skip}); final mesh has {} vertices",
+        mesh_graph.vertices.len()
+    );
+
+    write_journal_if_dumped();
+
+    Ok(())
 }
 
 /// Per-pointer-session sculpting state carried across PointerDown → PointerMove.
@@ -342,6 +463,11 @@ fn replay_log(mut mesh_graph: MeshGraph, input_log: InputLog) -> Result<(), Stri
         }
     }
 
+    // In hunt mode, write the operation journal next to a dumped state history
+    // (the dump happens mid-run; the journal is complete once the entry is done).
+    #[cfg(feature = "instrumentation")]
+    write_journal_if_dumped();
+
     eprintln!(
         "replayed {total} entries; final mesh has {} vertices",
         mesh_graph.vertices.len()
@@ -370,11 +496,44 @@ macro_rules! log_tests {
                 // both the `.json` and `.glb` paths relative to the crate root.
                 let name = concat!("src/tests/logs/", $log_name);
 
-                let (input_log, mesh_graph) = load_log(name);
+                let (input_log, mesh_graph_from_gltf) = load_log(name);
+
+                // Resume support (hunt mode): `MESH_GRAPH_RESUME_STATE=<state file>`
+                // plus `MESH_GRAPH_RESUME_INDEX=<step>` continues a run whose state
+                // history was dumped. Each mesh-graph topology op call (collapse /
+                // subdivide / individual merge_one_ring) is one journal step; the
+                // step index of a dumped state is in the state file name and
+                // `meta.txt`. The remaining journal steps are replayed on the
+                // loaded state instead of the input log.
+                #[cfg(feature = "instrumentation")]
+                if let Some(state_path) = std::env::var_os("MESH_GRAPH_RESUME_STATE") {
+                    let index = std::env::var("MESH_GRAPH_RESUME_INDEX")
+                        .ok()
+                        .and_then(|p| p.parse::<usize>().ok())
+                        .unwrap_or(0);
+                    let state = MeshGraph::load_state(&state_path)
+                        .expect("failed to load resume state");
+                    let dump_dir = std::path::Path::new(&state_path)
+                        .parent()
+                        .expect("resume state path has no parent")
+                        .to_path_buf();
+                    let journal = load_journal(&dump_dir)
+                        .unwrap_or_else(|e| panic!("failed to load resume journal: {e}"));
+                    let params = logged_sculpt_params_from_log(&input_log)
+                        .expect("input log has no sculpt params for resume");
+                    eprintln!(
+                        "resuming from state '{}' at journal step {index}; replaying steps {}+..",
+                        state_path.to_string_lossy(),
+                        index + 1
+                    );
+                    replay_journal(state, journal, params, index + 1)
+                        .unwrap_or_else(|e| panic!("resume failed: {e}"));
+                    return;
+                }
 
                 info!("replaying log '{name}'");
 
-                replay_log(mesh_graph, input_log)
+                replay_log(mesh_graph_from_gltf, input_log)
                     .unwrap_or_else(|e| panic!("failed to replay log '{name}': {e}"));
             }
         )+

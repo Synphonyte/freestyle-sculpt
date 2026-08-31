@@ -8,7 +8,7 @@ license = "MIT"
 name = "freestyle-sculpt"
 readme = "README.md"
 repository = "https://github.com/Synphonyte/freestyle-sculpt"
-version = "0.9.0"
+version = "0.10.0"
 
 [dependencies]
 anyhow = "1"
@@ -19,7 +19,7 @@ glam = "0.33"
 hashbrown = "0.17"
 itertools = "0.15"
 lazy_static = { version = "1.5", optional = true }
-mesh-graph = { version = "0.8" }
+mesh-graph = { version = "0.9" }
 parry3d = "0.30"
 rapier3d = { version = "0.35" }
 rerun = { version = "0.36", default-features = false, optional = true }
@@ -33,10 +33,14 @@ default = []
 rerun = ["dep:cfg-if", "dep:lazy_static", "dep:rerun", "mesh-graph/rerun"]
 serde = ["dep:serde", "glam/serde", "mesh-graph/serde"]
 gltf = ["mesh-graph/gltf"]
+# Layer-4 corruption-hunt instrumentation: the mesh-graph op journal + resume
+# support. Off in release builds; `MESH_GRAPH_DANGLING_CHECK=1` activates it at
+# runtime.
+instrumentation = ["mesh-graph/instrumentation", "serde"]
 
 [dev-dependencies]
 serde_json = "1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [patch.crates-io]
-mesh-graph.path = "../mesh-graph"
+# mesh-graph.path = "../mesh-graph"

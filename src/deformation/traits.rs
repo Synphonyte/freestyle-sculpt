@@ -6,6 +6,8 @@ use parry3d::query::PointQueryWithLocation;
 use slotmap::SecondaryMap;
 use tracing::{error, instrument};
 
+#[cfg(feature = "instrumentation")]
+use crate::deformation::journal::{self};
 use crate::deformation::{TopologyManager, cleanup_mesh};
 use crate::selectors::WeightedSelection;
 use crate::{ray::FaceIntersection, selectors::MeshSelector};
@@ -120,11 +122,27 @@ pub trait DeformationField {
             mesh_graph.log_rerun();
         }
 
+        #[cfg(feature = "instrumentation")]
+        journal::record_step(
+            journal::JournalOp::Collapse {
+                min_len_sqr: params.min_edge_length_squared,
+            },
+            &topology_manager.protected_vertices,
+            &topology_manager.protected_halfedges,
+        );
         mesh_graph.collapse_until_edges_above_min_length(
             params.min_edge_length_squared,
             &mut topology_manager.protected_vertices,
         );
 
+        #[cfg(feature = "instrumentation")]
+        journal::record_step(
+            journal::JournalOp::Subdivide {
+                max_len_sqr: params.max_edge_length_squared,
+            },
+            &topology_manager.protected_vertices,
+            &topology_manager.protected_halfedges,
+        );
         mesh_graph.subdivide_until_edges_below_max_length(
             params.max_edge_length_squared,
             &mut topology_manager.protected_halfedges,

@@ -36,7 +36,7 @@ gltf = ["mesh-graph/gltf"]
 # Layer-4 corruption-hunt instrumentation: the mesh-graph op journal + resume
 # support. Off in release builds; `MESH_GRAPH_DANGLING_CHECK=1` activates it at
 # runtime.
-instrumentation = ["mesh-graph/instrumentation", "serde"]
+# instrumentation = ["mesh-graph/instrumentation", "serde"]
 
 [dev-dependencies]
 serde_json = "1"

@@ -1,4 +1,5 @@
-//! Operation journal for the layer-4 corruption hunt.
+//! Debug-only operation journal (`instrumentation` feature), used to reproduce
+//! mesh-graph topology corruption.
 //!
 //! When `MESH_GRAPH_DANGLING_CHECK=1` is set, every mesh-graph topology op the
 //! deformation pipeline performs is recorded here as one *step*:
@@ -12,6 +13,9 @@
 //! 1:1 to journal steps. The journal itself is serialized and written next to the
 //! dumped states by the replay harness (`tests::logs`), which also implements the
 //! resume path (replaying the remaining steps on a dumped state).
+//!
+//! Recording is inert unless `MESH_GRAPH_DANGLING_CHECK` is set, so the feature can
+//! be compiled in without changing behaviour.
 
 use std::sync::Mutex;
 
@@ -54,11 +58,6 @@ fn enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var_os("MESH_GRAPH_DANGLING_CHECK").is_some())
 }
 
-/// True when the journal records steps (hunt mode).
-pub fn journal_enabled() -> bool {
-    enabled()
-}
-
 /// Records one step *before* the corresponding mesh op runs and advances mesh-graph's
 /// replay position to this step's index, so the state-history ring snapshot that is
 /// pushed at the op's (verified) end carries this step's index.
@@ -87,7 +86,13 @@ pub fn record_step(
     mesh_graph::set_replay_position(index as u64);
 }
 
-/// The journal steps recorded so far (for the harness to serialize on demand).
+/// The journal steps recorded so far, for the replay harness to serialize on demand.
+///
+/// The only in-tree caller is the `cfg(test)` replay harness, but this must stay
+/// compiled in every build: [`record_step`] records from ordinary library code, so
+/// gating the reader on `cfg(test)` would leave an instrumented binary accumulating
+/// entries nothing can ever drain.
+#[allow(dead_code)]
 pub fn journal_entries() -> Option<Vec<JournalEntry>> {
     JOURNAL.lock().unwrap().clone()
 }

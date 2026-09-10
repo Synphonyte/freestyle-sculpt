@@ -10,6 +10,12 @@
 //!
 //! - `rerun`: Enables recording of the mesh graph and the different algorithms to [Rerun](https://rerun.io/) for visualization.
 //! - `bevy`: Enables integration with the [Bevy](https://bevyengine.org/) game engine.
+//! - `serde`: Derives [`serde`](https://serde.rs/) `Serialize`/`Deserialize` for [`SculptParams`] and the mesh graph.
+//! - `gltf`: Enables mesh-graph's glTF loading (used by the log replay tests).
+//! - `instrumentation`: Debug-only. Records every topology operation into an
+//!   internal journal and enables mesh-graph's per-operation integrity validators
+//!   so a mesh corruption can be dumped and replayed. It is very slow and is not
+//!   part of the public API — never enable it for a release build.
 //!
 //! ## Customize sculpting
 //!

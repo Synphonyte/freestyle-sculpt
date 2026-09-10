@@ -3,6 +3,16 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-09-10
+
+- Updated dependency `mesh-graph` to 0.10
+- Fixed the debug-only `instrumentation` feature, which was declared in 0.10.0 but
+  did not compile: it now enables `mesh-graph/instrumentation` and pulls in `gltf`,
+  so `--features instrumentation` builds and runs the replay tests. It records every
+  topology operation into an internal journal and enables mesh-graph's per-operation
+  integrity validators, so a mesh corruption can be dumped and replayed. Not part of
+  the public API and never to be enabled for a release build.
+
 ## [0.10.0] - 2026-08-31
 
 - Updated dependencies `mesh-graph`, `parry3d`, `rapier3d`, and `rerun`

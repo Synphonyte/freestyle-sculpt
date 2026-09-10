@@ -1,12 +1,12 @@
 mod fields;
+/// Debug-only operation journal (`instrumentation` feature); crate-internal, not
+/// part of the public API.
 #[cfg(feature = "instrumentation")]
 pub(crate) mod journal;
 mod topology;
 mod traits;
 
 pub use fields::*;
-#[cfg(feature = "instrumentation")]
-pub use journal::*;
 use mesh_graph::MeshGraph;
 pub use topology::*;
 pub use traits::*;

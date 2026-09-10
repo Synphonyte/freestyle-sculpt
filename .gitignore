@@ -1,3 +1,14 @@
 target
 Cargo.lock
 examples/bevy-basic-sculpt/log*.json
+
+# Debug scratch: agent run logs and scripts
+.agents/
+
+# State-history dumps (`instrumentation` feature) are committed as test fixtures,
+# but `current.json` — the post-corruption state mesh-graph writes alongside the
+# ring snapshots — is read by nothing and only bloats the repo.
+src/tests/trace_runs/**/current.json
+
+# Ad-hoc dumps mesh-graph drops in the CWD when no MESH_GRAPH_STATE_DUMP_DIR is set
+mesh_graph_state_dump_*/

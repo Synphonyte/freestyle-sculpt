@@ -33,6 +33,18 @@ pub enum InputLogEntry {
         projection_matrix: Matrix4,
         state: LoggedSculptState,
     },
+    #[serde(rename_all = "camelCase")]
+    Weld {
+        amount: f32,
+        /// The max edge length the app derived from the merged mesh, recorded the
+        /// same way every other entry records `state.sculptParams`.
+        ///
+        /// `None` for logs exported before this was recorded, and for exports where
+        /// preprocessing failed (there the `.glb` is a raw union, not the mesh the
+        /// weld actually received).
+        #[serde(default)]
+        sculpt_params: Option<f32>,
+    },
 }
 
 /// THREE.Matrix4 serialized via JSON.stringify → { elements: [f64; 16] }

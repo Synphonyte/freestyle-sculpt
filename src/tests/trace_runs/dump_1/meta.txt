@@ -1,0 +1,15 @@
+reason: chain_integrity
+current replay position: 878
+context: "merge_vertices_one_rings"
+ring entries (oldest first):
+  state_00: pos=858 op=merge_vertices_one_rings
+  state_01: pos=859 op=collapse_until_edges_above_min_length
+  state_02: pos=861 op=merge_vertices_one_rings
+  state_03: pos=862 op=collapse_until_edges_above_min_length
+  state_04: pos=869 op=merge_vertices_one_rings
+  state_05: pos=870 op=collapse_until_edges_above_min_length
+  state_06: pos=872 op=merge_vertices_one_rings
+  state_07: pos=873 op=collapse_until_edges_above_min_length
+  state_08: pos=875 op=merge_vertices_one_rings
+  state_09: pos=876 op=collapse_until_edges_above_min_length
+current.json: current broken state (pos 878)

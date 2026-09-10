@@ -6,7 +6,7 @@ use crate::{
     SculptParams,
     deformation::{
         DeformationField, ErodeDilateDeformation, SmoothDeformation, TopologyManager,
-        TranslateDeformation, punch_hole,
+        TranslateDeformation, morphological_open_close, punch_hole,
     },
     ray::{FaceIntersection, Ray},
     selectors::{GeodesicWithFalloff, MeshSelector, SMOOTH_FALLOFF},
@@ -108,23 +108,21 @@ fn new_state(logged: &LoggedSculptState, mesh_graph: &MeshGraph) -> SculptState 
 #[cfg(feature = "instrumentation")]
 fn logged_sculpt_params_from_log(input_log: &InputLog) -> Option<SculptParams> {
     let entry = input_log.0.first()?;
-    let logged = match entry {
+    match entry {
         InputLogEntry::PointerDownSlice { state, .. }
         | InputLogEntry::PointerDownPerspective { state, .. }
-        | InputLogEntry::RemoveWithLasso { state, .. } => state,
-        _ => return None,
-    };
-    Some(SculptParams::new(logged.sculpt_params))
+        | InputLogEntry::RemoveWithLasso { state, .. } => {
+            Some(SculptParams::new(state.sculpt_params))
+        }
+        InputLogEntry::Weld { sculpt_params, .. } => sculpt_params.map(SculptParams::new),
+        _ => None,
+    }
 }
 
-/// Serializes the journal recorded so far into `dir/journal.json` (at most once
-/// per process, matching the once-per-process state dump).
+/// Serializes the journal recorded so far into `dir/journal.json`, replacing any
+/// previous contents.
 #[cfg(feature = "instrumentation")]
 fn write_journal(dir: &std::path::Path) {
-    static WRITTEN: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-    if WRITTEN.set(()).is_err() {
-        return;
-    }
     let Some(journal) = journal::journal_entries() else {
         return;
     };
@@ -145,9 +143,30 @@ fn write_journal(dir: &std::path::Path) {
     }
 }
 
-/// Writes the journal next to the dumped state history if a dump happened.
+/// Durability write: the first time a dump is seen, snapshot the journal next to it
+/// so a run killed right after the dump can still be resumed.
+///
+/// Deliberately once-only. This runs after every replayed entry, and the journal is
+/// megabytes of JSON, so rewriting it each time would cost quadratic I/O once a dump
+/// exists. [`write_journal_final`] replaces this partial
+/// snapshot with the complete journal when the run finishes normally.
 #[cfg(feature = "instrumentation")]
 fn write_journal_if_dumped() {
+    static WRITTEN: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    if WRITTEN.get().is_some() {
+        return;
+    }
+    if let Some(dir) = mesh_graph::state_dump_dir() {
+        let _ = WRITTEN.set(());
+        write_journal(&dir);
+    }
+}
+
+/// Overwrites the durability snapshot with the complete journal, so the resume range
+/// covers every step recorded *after* the dump - not just those up to the entry the
+/// dump happened in.
+#[cfg(feature = "instrumentation")]
+fn write_journal_final() {
     if let Some(dir) = mesh_graph::state_dump_dir() {
         write_journal(&dir);
     }
@@ -162,17 +181,48 @@ fn load_journal(dir: &std::path::Path) -> Result<Vec<JournalEntry>, String> {
     serde_json::from_slice(&bytes).map_err(|e| format!("could not parse {}: {e}", path.display()))
 }
 
+/// Finds the newest snapshot in a dumped state-history directory: the `state_*.json`
+/// file with the highest `pos_<n>` in its name — the ring's most recent entry, i.e.
+/// the state closest to the corruption that triggered the dump. Returns the state
+/// file path and its journal step index.
+#[cfg(feature = "instrumentation")]
+fn newest_snapshot(dump_dir: &std::path::Path) -> Option<(usize, std::path::PathBuf)> {
+    let mut best: Option<(usize, std::path::PathBuf)> = None;
+    for entry in std::fs::read_dir(dump_dir).ok()? {
+        let Ok(entry) = entry else { continue };
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !name.starts_with("state_") || !name.ends_with(".json") {
+            continue;
+        }
+        // A name without a parseable `pos_<n>` cannot be placed in the journal, and
+        // guessing step 0 would replay the whole journal against a mid-run state.
+        let Some(pos) = name.split("pos_").nth(1).and_then(|s| {
+            s.chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect::<String>()
+                .parse::<usize>()
+                .ok()
+        }) else {
+            continue;
+        };
+        if best.as_ref().is_none_or(|(best_pos, _)| pos > *best_pos) {
+            best = Some((pos, entry.path()));
+        }
+    }
+    best
+}
+
 /// Applies the journal steps starting at `skip` (entries `0..skip` are assumed to
 /// be already contained in `mesh_graph`) — the resume path. The topology manager
 /// is rebuilt from the mesh and the journal's marked-set snapshots, mirroring the
-/// original run's per-step state.
+/// original run's per-step state. Returns the mesh for post-replay inspection.
 #[cfg(feature = "instrumentation")]
 fn replay_journal(
     mut mesh_graph: MeshGraph,
     journal: Vec<JournalEntry>,
     params: SculptParams,
     skip: usize,
-) -> Result<(), String> {
+) -> Result<MeshGraph, String> {
     let mut topology_manager = TopologyManager::new(&mesh_graph, params);
 
     let mut count: usize = 0;
@@ -217,9 +267,9 @@ fn replay_journal(
         mesh_graph.vertices.len()
     );
 
-    write_journal_if_dumped();
+    write_journal_final();
 
-    Ok(())
+    Ok(mesh_graph)
 }
 
 /// Per-pointer-session sculpting state carried across PointerDown → PointerMove.
@@ -365,6 +415,33 @@ fn sculpt_with_lasso(
     );
 }
 
+/// Replays the app's weld: a morphological close by `amount`.
+///
+/// Mirrors `voxel_wasm::sculpt::weld_meshes`, which is the shared core behind both the
+/// `weldMeshes` wasm binding and that project's own log player. The mesh merging step
+/// there is already done here - the log's `.glb` is the merged mesh - so this is the
+/// close that follows it.
+///
+/// Growing every surface by `amount` bridges the gaps between disconnected sheets and
+/// fuses them, then eroding by the same amount returns to the original silhouette. A
+/// weld is always a close, and a close needs a negative amount, so the log's unsigned
+/// tool value is forced negative exactly as `weld_meshes` does.
+///
+/// `sculpt_params` is the app's own recorded value, so this cannot drift from what
+/// production used the way re-deriving it here would.
+fn sculpt_weld(mesh_graph: &mut MeshGraph, amount: f32, sculpt_params: f32) {
+    let sculpt_params = SculptParams::new(sculpt_params);
+    let mut topology_manager = TopologyManager::new(mesh_graph, sculpt_params);
+
+    morphological_open_close(
+        mesh_graph,
+        &sculpt_params,
+        &mut topology_manager,
+        -amount.abs(),
+        (),
+    );
+}
+
 // -- replay ---------------------------------------------------------------------
 
 fn replay_log(mut mesh_graph: MeshGraph, input_log: InputLog) -> Result<(), String> {
@@ -454,6 +531,25 @@ fn replay_log(mut mesh_graph: MeshGraph, input_log: InputLog) -> Result<(), Stri
                     mat4_from_elements(&projection_matrix),
                 );
             }
+            InputLogEntry::Weld {
+                amount,
+                sculpt_params,
+            } => {
+                info!("[{i}] Weld amount={amount}");
+
+                // Older exports (and exports whose preprocessing failed) carry no
+                // params. Re-deriving them here would silently diverge from the app,
+                // so refuse rather than guess.
+                let sculpt_params = sculpt_params.ok_or_else(|| {
+                    format!(
+                        "[{i}] Weld entry has no `sculptParams`; re-export the log with a \
+                         voxel-wasm that records them"
+                    )
+                })?;
+
+                sculpt_weld(&mut mesh_graph, amount, sculpt_params);
+                active_state = None;
+            }
         }
 
         #[cfg(feature = "rerun")]
@@ -461,12 +557,17 @@ fn replay_log(mut mesh_graph: MeshGraph, input_log: InputLog) -> Result<(), Stri
             mesh_graph::RR.set_time_sequence("replay_step", i as i64 + 1);
             mesh_graph.log_rerun();
         }
+
+        // Hunt mode: a corruption dump can happen inside this entry's ops; write
+        // the operation journal next to it immediately so the run can be resumed
+        // even when the process is killed right after the dump.
+        #[cfg(feature = "instrumentation")]
+        write_journal_if_dumped();
     }
 
-    // In hunt mode, write the operation journal next to a dumped state history
-    // (the dump happens mid-run; the journal is complete once the entry is done).
+    // Replace the mid-run durability snapshot with the full journal.
     #[cfg(feature = "instrumentation")]
-    write_journal_if_dumped();
+    write_journal_final();
 
     eprintln!(
         "replayed {total} entries; final mesh has {} vertices",
@@ -526,8 +627,9 @@ macro_rules! log_tests {
                         state_path.to_string_lossy(),
                         index + 1
                     );
-                    replay_journal(state, journal, params, index + 1)
-                        .unwrap_or_else(|e| panic!("resume failed: {e}"));
+                    if let Err(e) = replay_journal(state, journal, params, index + 1) {
+                        panic!("resume failed: {e}");
+                    }
                     return;
                 }
 
@@ -540,6 +642,166 @@ macro_rules! log_tests {
     };
 }
 
+/// Replays the remaining operation journal on a dumped pre-corruption state and
+/// asserts both that mesh-graph raised no integrity violation during the replay and
+/// that the replayed mesh's outgoing halfedge lists still match the lists rebuilt
+/// from its halfedges.
+/// This is the regression test for the outgoing-list wipe (root cause of the
+/// rare layer-4 corruption): `src/tests/trace_runs/dump_1/` is a state-history
+/// dump from a pre-fix `log_002` run. Before the fix via
+/// [`MeshGraph::rebuild_vertex_outgoing_list`], the steps right after the dump
+/// (journal steps 877/878) reliably produced an "OUTGOING" corruption report;
+/// with the fix, the entire remaining journal (~1300 steps) replays cleanly.
+///
+/// Any dump directory with a `journal.json` + `state_*.json` files can be used
+/// in the same way (the newest snapshot is selected automatically).
+#[test]
+#[cfg(feature = "instrumentation")]
+fn snapshot_replay_dump_1() {
+    use mesh_graph::{integrity_violation_reported, reset_integrity_violation};
+
+    init_tracing();
+
+    // The flag is per-thread; clear it so this assertion covers only our own replay.
+    reset_integrity_violation();
+
+    let dump_dir = std::path::PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/tests/trace_runs/dump_1"
+    ));
+    let (pos, state_path) = newest_snapshot(&dump_dir).unwrap_or_else(|| {
+        panic!(
+            "no state_*.json in {} - the dump fixture is a committed part of this \
+             regression test; restore it from git",
+            dump_dir.display()
+        )
+    });
+    eprintln!(
+        "snapshot replay: state {} (journal step {pos}), replaying steps {}+..",
+        state_path.display(),
+        pos + 1
+    );
+
+    let state = MeshGraph::load_state(&state_path).expect("failed to load snapshot state");
+    let journal = load_journal(&dump_dir).expect("failed to load snapshot journal");
+
+    // The sculpt params come from the input log the snapshot was captured from
+    // (log 002); the .glb mesh is not needed because the mesh is the snapshot.
+    let json_bytes = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/tests/logs/002.json"
+    ))
+    .expect("failed to read src/tests/logs/002.json");
+    let input_log: InputLog =
+        serde_json::from_slice(&json_bytes).expect("failed to parse src/tests/logs/002.json");
+    let params = logged_sculpt_params_from_log(&input_log)
+        .expect("log 002 has no sculpt params for snapshot replay");
+
+    // The snapshot was captured after journal step `pos`; replay the rest.
+    let mut mesh = replay_journal(state, journal, params, pos + 1).expect("snapshot replay failed");
+
+    // Catches the chain/twin probes, which report through mesh-graph's own inspectors.
+    assert!(
+        !integrity_violation_reported(),
+        "mesh-graph reported an integrity violation during the snapshot replay"
+    );
+
+    // The outgoing-list wipe is checked directly on the mesh as well, so the specific
+    // regression this fixture guards stays covered even if the probes are quiet.
+    //
+    // The wipe shows up as a *membership* difference against the lists rebuilt from the
+    // halfedges. Order is explicitly arbitrary (`MeshGraph::outgoing_halfedges` is
+    // documented as unordered, and mesh-graph reports order-only deviations as benign),
+    // so the comparison is set-based.
+    let stored: HashMap<VertexId, hashbrown::HashSet<mesh_graph::HalfedgeId>> = mesh
+        .outgoing_halfedges
+        .iter()
+        .map(|(vertex, halfedges)| (vertex, halfedges.iter().copied().collect()))
+        .collect();
+
+    mesh.rebuild_outgoing_halfedges();
+
+    let diverged = mesh
+        .outgoing_halfedges
+        .iter()
+        .filter(|(vertex, rebuilt)| {
+            let truth: hashbrown::HashSet<mesh_graph::HalfedgeId> =
+                rebuilt.iter().copied().collect();
+            stored.get(vertex).is_none_or(|kept| *kept != truth)
+        })
+        .map(|(vertex, _)| vertex)
+        .collect::<Vec<_>>();
+
+    assert!(
+        diverged.is_empty(),
+        "outgoing halfedge lists diverged from the rebuild ground truth at {} vertices \
+         (first: {:?}); the outgoing-list wipe has regressed",
+        diverged.len(),
+        diverged.first()
+    );
+}
+
+/// Regression test for the weld-hole defect: `merge_vertices_one_rings` on a
+/// common-ring vertex pair (the rings share vertices) ended its op with
+/// boundary halfedges (`face=None`) — holes in a mesh that must stay closed.
+///
+/// The fixture is `src/tests/trace_runs/weld_hole_dump/` — a state-history dump
+/// from a `log_010_weld` run (journal step 1, ~4.5k vertices). The remaining
+/// journal steps (2..) are replayed on the state; step 3 (merge 1487→1490)
+/// deterministically leaves 7-12 boundary halfedges. Unlike the chain/twin
+/// probes, the hole check is only active with `MESH_GRAPH_HOLE_CHECK=1`, so
+/// this test verifies the defect directly on the replayed mesh instead of
+/// relying on process-global instrumentation env vars.
+#[test]
+#[cfg(feature = "instrumentation")]
+fn snapshot_replay_weld_hole() {
+    init_tracing();
+
+    let dump_dir = std::path::PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/tests/trace_runs/weld_hole_dump"
+    ));
+    let (pos, state_path) = newest_snapshot(&dump_dir).unwrap_or_else(|| {
+        panic!(
+            "no state_*.json in {} - the dump fixture is a committed part of this \
+             regression test; restore it from git",
+            dump_dir.display()
+        )
+    });
+    eprintln!(
+        "snapshot replay: state {} (journal step {pos}), replaying steps {}+..",
+        state_path.display(),
+        pos + 1
+    );
+
+    let state = MeshGraph::load_state(&state_path).expect("failed to load snapshot state");
+    let journal = load_journal(&dump_dir).expect("failed to load snapshot journal");
+
+    // A `Weld` entry carries no sculpt state, so the params are derived from the
+    // snapshot mesh, the same way the app derives them (see `sculpt_weld`).
+    let json_bytes = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/tests/logs/010_weld.json"
+    ))
+    .expect("failed to read src/tests/logs/010_weld.json");
+    let input_log: InputLog =
+        serde_json::from_slice(&json_bytes).expect("failed to parse src/tests/logs/010_weld.json");
+    let params = logged_sculpt_params_from_log(&input_log)
+        .expect("log 010_weld has no sculpt params for snapshot replay");
+
+    let mesh = replay_journal(state, journal, params, pos + 1).expect("snapshot replay failed");
+
+    let boundary = mesh
+        .halfedges
+        .values()
+        .filter(|he| he.face.is_none())
+        .count();
+    assert_eq!(
+        boundary, 0,
+        "weld merge left {boundary} boundary halfedges (holes) after the replay"
+    );
+}
+
 log_tests! {
     log_001: "001",
     log_002: "002",
@@ -550,4 +812,5 @@ log_tests! {
     log_007: "007",
     log_008: "008",
     log_009: "009",
+    log_010_weld: "010_weld",
 }

@@ -1,0 +1,7 @@
+reason: hole
+current replay position: 3
+context: "merge_vertices_one_rings"
+ring entries (oldest first):
+  state_00: pos=0 op=merge_vertices_one_rings
+  state_01: pos=1 op=merge_vertices_one_rings
+current.json: current broken state (pos 3)

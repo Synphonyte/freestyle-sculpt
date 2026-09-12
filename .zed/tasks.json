@@ -1,14 +1,14 @@
 // Project tasks configuration. See https://zed.dev/docs/tasks for documentation.
 [
 	{
-		"label": "cargo test (gltf,serde)",
+		"label": "Run freestyle-sculpt tests",
 		"command": "cargo",
 		"args": [
 			"test",
 			"--features",
-			"gltf,serde",
-			//	"--release",
-			"log_002"
+			"gltf,serde,rerun",
+			"--release",
+			"log_010_weld"
 		],
 		"env": {
 			"RUST_LOG": "error",

@@ -75,3 +75,62 @@ fn apply_ignores_stale_selector_vertex_ids() {
     );
     assert!(mesh_graph.vertex_normals.is_some());
 }
+
+#[test]
+fn from_mesh_graph_is_resolution_neutral() {
+    use mesh_graph::primitives::IcoSphere;
+
+    let mesh_graph = MeshGraph::from(IcoSphere {
+        subdivisions: 3,
+        radius: 1.0,
+    });
+
+    let mut edge_lengths = mesh_graph
+        .halfedges
+        .values()
+        .map(|he| he.length(&mesh_graph))
+        .collect_vec();
+    let median_edge_length = parry3d::utils::median(&mut edge_lengths);
+
+    let params = SculptParams::from_mesh_graph(&mesh_graph, 0.0);
+
+    // The target is the *upper* bound of the band, so it must sit above the
+    // median — otherwise half the edges are split on the first cleanup pass.
+    assert!(
+        params.max_edge_length_squared.sqrt() > median_edge_length,
+        "target edge length must exceed the median, got {} for median {median_edge_length}",
+        params.max_edge_length_squared.sqrt()
+    );
+    assert!(
+        (params.max_edge_length_squared.sqrt()
+            - median_edge_length * SculptParams::RESOLUTION_NEUTRAL_EDGE_LENGTH_FACTOR)
+            .abs()
+            < 1e-5
+    );
+}
+
+#[test]
+fn from_mesh_graph_with_factor_clamps_to_min_edge_length_after_scaling() {
+    use mesh_graph::primitives::IcoSphere;
+
+    let mesh_graph = MeshGraph::from(IcoSphere {
+        subdivisions: 2,
+        radius: 1.0,
+    });
+
+    // A floor far above anything the median could produce must win.
+    let params = SculptParams::from_mesh_graph_with_factor(&mesh_graph, 100.0, 1.6);
+    assert!((params.max_edge_length_squared.sqrt() - 100.0).abs() < 1e-3);
+
+    // A larger factor must produce a coarser (longer) target.
+    let fine = SculptParams::from_mesh_graph_with_factor(&mesh_graph, 0.0, 1.0);
+    let coarse = SculptParams::from_mesh_graph_with_factor(&mesh_graph, 0.0, 2.0);
+    assert!(coarse.max_edge_length_squared > fine.max_edge_length_squared);
+}
+
+#[test]
+fn from_mesh_graph_handles_mesh_without_halfedges() {
+    let mesh_graph = MeshGraph::default();
+    let params = SculptParams::from_mesh_graph(&mesh_graph, 0.5);
+    assert!((params.max_edge_length_squared.sqrt() - 0.5).abs() < 1e-6);
+}

@@ -116,6 +116,11 @@ fn apply_phase<M>(
     let factor = 1.0 / steps as f32;
 
     for _ in 0..steps {
+        // The mesh folds as it is offset, so the normals from the previous step no
+        // longer describe it: they drive the motion in the wrong direction and make
+        // the merge gate in `TopologyPhysicsHooks` reject colliding sheets.
+        mesh_graph.compute_vertex_normals();
+
         mesh_graph.optimize_bvh_incremental();
 
         // Move every vertex along its normal by signed_amount * factor.

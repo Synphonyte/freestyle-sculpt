@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cleanup pass instead of preserving the input mesh's resolution
 - Added `SculptParams::from_mesh_graph_with_factor` to choose the detail level
   explicitly
+- Replaced the hand-rolled `FloatOrd` in `GeodesicWithFalloff` with
+  `ordered_float::OrderedFloat`, which was already in the tree via `parry3d` and
+  `mesh-graph` and resolves to the same version (no extra build)
+- Fixed `cleanup_mesh` logging `did not converge` on every normal completion of the
+  `allow_topology_change == false` path, which fell through to the error on its way out
+- `cleanup_mesh` now returns `EdgeLengthCleanup` and stops as soon as both edge-length
+  ops report a clean mesh, instead of inferring that from `protected_vertices` having
+  stopped growing
 
 ## [0.11.0] - 2026-09-10
 

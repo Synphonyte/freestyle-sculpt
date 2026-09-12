@@ -3,28 +3,12 @@ use std::{cmp::Reverse, collections::BinaryHeap};
 use hashbrown::HashMap;
 
 use mesh_graph::MeshGraph;
+use ordered_float::OrderedFloat;
 use tracing::{error, instrument};
 
 use crate::ray::FaceIntersection;
 
 use super::{FalloffFn, MeshSelector, WeightedSelection, sphere_with_falloff_weight};
-
-#[derive(PartialEq)]
-struct FloatOrd(f32);
-
-impl Eq for FloatOrd {}
-
-impl PartialOrd for FloatOrd {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for FloatOrd {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.total_cmp(&other.0)
-    }
-}
 
 /// Generates a selection on the surface of a mesh that is within a sphere with a falloff and that
 /// is limited to be connected to the input face.
@@ -67,7 +51,7 @@ impl MeshSelector for GeodesicWithFalloff {
         let max_dist = self.radius + self.falloff;
 
         let mut vertex_to_distance: HashMap<_, f32> = HashMap::new();
-        let mut heap: BinaryHeap<Reverse<(FloatOrd, _)>> = BinaryHeap::new();
+        let mut heap: BinaryHeap<Reverse<(OrderedFloat<f32>, _)>> = BinaryHeap::new();
 
         for he_id in input_face.halfedges(mesh_graph) {
             let Some(he) = mesh_graph.halfedges.get(he_id) else {
@@ -82,11 +66,11 @@ impl MeshSelector for GeodesicWithFalloff {
             let dist = face_intersection.point.distance(pos);
             if dist <= max_dist {
                 vertex_to_distance.insert(v_id, dist);
-                heap.push(Reverse((FloatOrd(dist), v_id)));
+                heap.push(Reverse((OrderedFloat(dist), v_id)));
             }
         }
 
-        while let Some(Reverse((FloatOrd(dist), v_id))) = heap.pop() {
+        while let Some(Reverse((OrderedFloat(dist), v_id))) = heap.pop() {
             if vertex_to_distance
                 .get(&v_id)
                 .copied()
@@ -118,7 +102,7 @@ impl MeshSelector for GeodesicWithFalloff {
                         .unwrap_or(f32::INFINITY);
                     if new_dist < current {
                         vertex_to_distance.insert(he.end_vertex, new_dist);
-                        heap.push(Reverse((FloatOrd(new_dist), he.end_vertex)));
+                        heap.push(Reverse((OrderedFloat(new_dist), he.end_vertex)));
                     }
                 }
             }

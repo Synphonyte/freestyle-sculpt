@@ -3,22 +3,21 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.12.0] - 2026-09-13
 
+- Updated dependency `mesh-graph` to 0.11
 - `SculptParams::from_mesh_graph` now scales the median edge length by
-  `RESOLUTION_NEUTRAL_EDGE_LENGTH_FACTOR` (1.6) instead of using it as
-  `max_edge_length` directly, which tripled the triangle count on the first
-  cleanup pass instead of preserving the input mesh's resolution
+  `RESOLUTION_NEUTRAL_EDGE_LENGTH_FACTOR` (1.6) so the input mesh's resolution is
+  preserved instead of tripling the triangle count on the first cleanup pass
 - Added `SculptParams::from_mesh_graph_with_factor` to choose the detail level
   explicitly
 - Replaced the hand-rolled `FloatOrd` in `GeodesicWithFalloff` with
-  `ordered_float::OrderedFloat`, which was already in the tree via `parry3d` and
-  `mesh-graph` and resolves to the same version (no extra build)
+  `ordered_float::OrderedFloat` (already in the tree via `parry3d` and `mesh-graph`,
+  no extra build)
 - Fixed `cleanup_mesh` logging `did not converge` on every normal completion of the
-  `allow_topology_change == false` path, which fell through to the error on its way out
-- `cleanup_mesh` now returns `EdgeLengthCleanup` and stops as soon as both edge-length
-  ops report a clean mesh, instead of inferring that from `protected_vertices` having
-  stopped growing
+  `allow_topology_change == false` path
+- `cleanup_mesh` now returns `EdgeLengthCleanup` and stops as soon as both
+  edge-length ops report a clean mesh
 
 ## [0.11.0] - 2026-09-10
 

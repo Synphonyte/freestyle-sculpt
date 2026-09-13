@@ -23,7 +23,7 @@ mesh-graph = "0.11"
 ordered-float = "5"
 parry3d = "0.30"
 rapier3d = { version = "0.35" }
-rerun = { version = "0.36", default-features = false, optional = true }
+rerun = { version = "0.37", default-features = false, optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 slotmap = "1"
 tracing = { version = "0.1", features = ["release_max_level_off"] }

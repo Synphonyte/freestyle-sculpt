@@ -1,4 +1,4 @@
-use hashbrown::{HashMap, HashSet};
+use mesh_graph::hash::{HashMap, HashSet};
 use mesh_graph::{HalfedgeId, MergeVerticesOneRing, MeshGraph, VertexId};
 use rapier3d::prelude::*;
 use tracing::{error, instrument};
@@ -56,7 +56,7 @@ impl TopologyManager {
 
     pub fn new(mesh_graph: &MeshGraph, sculpt_params: SculptParams) -> Self {
         let mut collider_set = ColliderSet::new();
-        let mut vertex_id_to_collider_handle = HashMap::new();
+        let mut vertex_id_to_collider_handle = HashMap::default();
 
         for (vertex_id, &pos) in &mesh_graph.positions {
             let collider = Self::create_collider(&sculpt_params, vertex_id).translation(pos);
@@ -65,8 +65,8 @@ impl TopologyManager {
         }
 
         Self {
-            protected_halfedges: HashSet::new(),
-            protected_vertices: HashSet::new(),
+            protected_halfedges: HashSet::default(),
+            protected_vertices: HashSet::default(),
 
             collision_pipeline: CollisionPipeline::new(),
             island_manager: IslandManager::new(),

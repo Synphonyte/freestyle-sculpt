@@ -148,7 +148,31 @@ fn apply_phase<M>(
             }
         }
 
+        // Sheets that were `2 * amount` apart and offset towards each other land exactly
+        // on top of each other. Zip them before any merge sees the double layer: merging
+        // into it leaves flaps that the merge's cleanup deletes, tearing holes nothing can
+        // close.
+        zip_coincident_sheets(mesh_graph, topology_manager);
+
         cleanup_mesh(mesh_graph, params, topology_manager, true);
+    }
+}
+
+/// Zips every patch where two sheets lie exactly face to face
+/// ([`MeshGraph::zip_coincident_patches`]) and drops what it removed from the protected
+/// sets.
+///
+/// The whole mesh is the scope: the offset that precedes this moves every vertex, and a
+/// vertex can land on one that stayed put.
+fn zip_coincident_sheets(mesh_graph: &mut MeshGraph, topology_manager: &mut TopologyManager) {
+    let scope = mesh_graph.vertices.keys().collect::<Vec<_>>();
+    let zip = mesh_graph.zip_coincident_patches(scope);
+
+    for v_id in &zip.removed_vertices {
+        topology_manager.protected_vertices.remove(v_id);
+    }
+    for he_id in &zip.removed_halfedges {
+        topology_manager.protected_halfedges.remove(he_id);
     }
 }
 
@@ -214,6 +238,129 @@ impl ContainsPoint<UnitMarker> for () {
 mod tests {
     use super::*;
     use mesh_graph::primitives::IcoSphere;
+
+    /// A closed, axis-aligned cube from `origin` with `size`, `n` quads per side, wound
+    /// outwards.
+    fn tessellated_cube(origin: Vec3, size: f32, n: usize) -> (Vec<Vec3>, Vec<usize>) {
+        let mut index: hashbrown::HashMap<[usize; 3], usize> = hashbrown::HashMap::new();
+        let mut positions = Vec::new();
+        let mut indices = Vec::new();
+        let step = size / n as f32;
+
+        for axis in 0..3 {
+            let (u_axis, v_axis) = ((axis + 1) % 3, (axis + 2) % 3);
+            for side in [0, n] {
+                let mut outward = Vec3::ZERO;
+                outward[axis] = if side == 0 { -1.0 } else { 1.0 };
+
+                for i in 0..n {
+                    for j in 0..n {
+                        let quad = [(0, 0), (1, 0), (1, 1), (0, 1)].map(|(di, dj)| {
+                            let mut cell = [0; 3];
+                            cell[axis] = side;
+                            cell[u_axis] = i + di;
+                            cell[v_axis] = j + dj;
+                            *index.entry(cell).or_insert_with(|| {
+                                positions.push(origin + Vec3::from(cell.map(|c| c as f32)) * step);
+                                positions.len() - 1
+                            })
+                        });
+                        let [a, b, c] = [quad[0], quad[1], quad[2]].map(|i| positions[i]);
+                        if (b - a).cross(c - a).dot(outward) > 0.0 {
+                            indices.extend([quad[0], quad[1], quad[2], quad[0], quad[2], quad[3]]);
+                        } else {
+                            indices.extend([quad[0], quad[2], quad[1], quad[0], quad[3], quad[2]]);
+                        }
+                    }
+                }
+            }
+        }
+
+        (positions, indices)
+    }
+
+    /// Two unit cubes side by side along x, `gap` apart, as one mesh.
+    fn two_cubes(gap: f32, n: usize) -> MeshGraph {
+        let (mut positions, mut indices) = tessellated_cube(Vec3::ZERO, 1.0, n);
+        let (other_positions, other_indices) =
+            tessellated_cube(Vec3::new(1.0 + gap, 0.0, 0.0), 1.0, n);
+        let offset = positions.len();
+        positions.extend(other_positions);
+        indices.extend(other_indices.into_iter().map(|i| i + offset));
+
+        let mut mesh = MeshGraph::indexed_triangles(&positions, &indices);
+        mesh.compute_vertex_normals();
+        mesh.rebuild_bvh();
+        mesh
+    }
+
+    fn boundary_halfedges(mesh: &MeshGraph) -> usize {
+        mesh.halfedges
+            .values()
+            .filter(|he| he.face.is_none())
+            .count()
+    }
+
+    /// Two cubes touching on a whole side are zipped into one closed box, and nothing the
+    /// zip removed stays protected.
+    #[test]
+    fn zip_coincident_sheets_joins_touching_cubes() {
+        let n = 4;
+        let mut mesh = two_cubes(0.0, n);
+        let params = SculptParams::new(0.5);
+        let mut tm = TopologyManager::new(&mesh, params);
+        let (vertices, faces) = (mesh.vertices.len(), mesh.faces.len());
+
+        // Protect everything on the contact plane, where the zip fuses and removes.
+        for (v_id, position) in &mesh.positions {
+            if position.x == 1.0 {
+                tm.protected_vertices.insert(v_id);
+                for &he_id in &mesh.outgoing_halfedges[v_id] {
+                    tm.protected_halfedges.insert(he_id);
+                }
+            }
+        }
+
+        zip_coincident_sheets(&mut mesh, &mut tm);
+
+        // Both layers of the n x n contact side go; its (n + 1)^2 vertices on one cube are
+        // fused into the other's, whose inner (n - 1)^2 are left without faces.
+        assert_eq!(mesh.faces.len(), faces - 2 * 2 * n * n);
+        assert_eq!(
+            mesh.vertices.len(),
+            vertices - (n + 1) * (n + 1) - (n - 1) * (n - 1)
+        );
+        assert_eq!(boundary_halfedges(&mesh), 0);
+        assert!(
+            tm.protected_vertices
+                .iter()
+                .all(|v| mesh.vertices.contains_key(*v))
+        );
+        assert!(
+            tm.protected_halfedges
+                .iter()
+                .all(|he| mesh.halfedges.contains_key(*he))
+        );
+    }
+
+    /// The gap=0.05 weld: closing by half the gap puts the two facing sides exactly on the
+    /// midplane, where the zip joins them before any merge runs. The weld ends closed.
+    #[test]
+    fn close_joins_sheets_that_meet_on_the_midplane() {
+        let mut mesh = two_cubes(0.05, 8);
+        // The weld's own resolution: `min_edge_length_squared` 0.0096.
+        let params = SculptParams::new(0.2);
+        let mut tm = TopologyManager::new(&mesh, params);
+
+        morphological_open_close(&mut mesh, &params, &mut tm, -0.025, ());
+
+        assert_eq!(boundary_halfedges(&mesh), 0);
+        assert!(
+            tm.protected_vertices
+                .iter()
+                .all(|v| mesh.vertices.contains_key(*v))
+        );
+    }
 
     fn setup_mesh() -> (MeshGraph, SculptParams, TopologyManager) {
         let mut mesh = MeshGraph::from(IcoSphere {

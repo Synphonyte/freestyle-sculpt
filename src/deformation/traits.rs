@@ -1,5 +1,5 @@
+use crate::hash::{HashMap, HashSet};
 use glam::Vec3;
-use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
 use mesh_graph::{MeshGraph, VertexId};
 use parry3d::query::PointQueryWithLocation;
@@ -104,7 +104,7 @@ pub trait DeformationField {
 
         let Some(intersection) = self.intersection() else {
             error!("Intersection should be set before calling `apply` on the DeformationField");
-            return HashMap::new();
+            return HashMap::default();
         };
 
         let max_movement_squared =
@@ -160,7 +160,7 @@ pub trait DeformationField {
                 error!(
                     "Couldn't find intersection even after calling `update_intersection` on the DeformationField"
                 );
-                return HashMap::new();
+                return HashMap::default();
             };
 
             vertex_to_weight = selector.select(mesh_graph, intersection).vertex_to_weight;
@@ -185,7 +185,7 @@ pub trait DeformationField {
             );
         }
 
-        let mut affected_face_ids = HashSet::new();
+        let mut affected_face_ids = HashSet::default();
 
         self.update_intersection(mesh_graph);
 
@@ -193,7 +193,7 @@ pub trait DeformationField {
             error!(
                 "Couldn't find intersection even after calling `update_intersection` on the DeformationField"
             );
-            return HashMap::new();
+            return HashMap::default();
         };
 
         vertex_to_weight = selector.select(mesh_graph, intersection).vertex_to_weight;

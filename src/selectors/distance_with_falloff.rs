@@ -1,5 +1,5 @@
+use crate::hash::{HashMap, HashSet};
 use glam::Vec3;
-use hashbrown::{HashMap, HashSet};
 
 use mesh_graph::{MeshGraph, Selection, error_none};
 use tracing::{error, instrument};
@@ -46,7 +46,7 @@ impl MeshSelector for DistanceWithFalloff {
     ) -> WeightedSelection {
         let input_pos = face_intersection.point;
 
-        let mut vertex_to_weight = HashMap::new();
+        let mut vertex_to_weight = HashMap::default();
 
         let aabb = parry3d::bounding_volume::Aabb::from_half_extents(
             input_pos,

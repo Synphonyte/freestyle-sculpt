@@ -1,4 +1,4 @@
-use hashbrown::HashMap;
+use crate::hash::HashMap;
 use mesh_graph::{MeshGraph, VertexId};
 
 use crate::ray::FaceIntersection;

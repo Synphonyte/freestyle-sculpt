@@ -1,6 +1,6 @@
 use std::{cmp::Reverse, collections::BinaryHeap};
 
-use hashbrown::HashMap;
+use crate::hash::HashMap;
 
 use mesh_graph::MeshGraph;
 use ordered_float::OrderedFloat;
@@ -50,7 +50,7 @@ impl MeshSelector for GeodesicWithFalloff {
 
         let max_dist = self.radius + self.falloff;
 
-        let mut vertex_to_distance: HashMap<_, f32> = HashMap::new();
+        let mut vertex_to_distance: HashMap<_, f32> = HashMap::default();
         let mut heap: BinaryHeap<Reverse<(OrderedFloat<f32>, _)>> = BinaryHeap::new();
 
         for he_id in input_face.halfedges(mesh_graph) {

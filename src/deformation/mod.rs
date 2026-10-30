@@ -48,7 +48,8 @@ pub fn cleanup_mesh(
                 &topology_manager.protected_halfedges,
             );
         }
-        let collapse_outcome = mesh_graph.collapse_until_edges_above_min_length(
+        let collapse_outcome = topology::collapse_until_edges_above_min_length_with_weld_capture(
+            mesh_graph,
             params.min_edge_length_squared,
             &mut topology_manager.protected_vertices,
         );

@@ -19,7 +19,7 @@
 
 use std::sync::Mutex;
 
-use hashbrown::HashSet;
+use crate::hash::HashSet;
 use mesh_graph::{HalfedgeId, VertexId};
 use serde::{Deserialize, Serialize};
 

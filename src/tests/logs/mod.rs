@@ -2,6 +2,7 @@ mod json;
 
 #[cfg(feature = "instrumentation")]
 use crate::deformation::journal::{self, JournalEntry, JournalOp};
+use crate::hash::HashMap;
 use crate::{
     SculptParams,
     deformation::{
@@ -12,7 +13,6 @@ use crate::{
     selectors::{GeodesicWithFalloff, MeshSelector, SMOOTH_FALLOFF},
 };
 use glam::{Mat4, Vec3};
-use hashbrown::HashMap;
 use json::{InputLog, InputLogEntry, LoggedSculptState, Matrix4};
 use mesh_graph::{MeshGraph, Polygon2, VertexId};
 use parry3d::query::{PointProjection, PointQueryWithLocation};
@@ -713,7 +713,7 @@ fn snapshot_replay_dump_1() {
     // halfedges. Order is explicitly arbitrary (`MeshGraph::outgoing_halfedges` is
     // documented as unordered, and mesh-graph reports order-only deviations as benign),
     // so the comparison is set-based.
-    let stored: HashMap<VertexId, hashbrown::HashSet<mesh_graph::HalfedgeId>> = mesh
+    let stored: HashMap<VertexId, crate::hash::HashSet<mesh_graph::HalfedgeId>> = mesh
         .outgoing_halfedges
         .iter()
         .map(|(vertex, halfedges)| (vertex, halfedges.iter().copied().collect()))
@@ -725,7 +725,7 @@ fn snapshot_replay_dump_1() {
         .outgoing_halfedges
         .iter()
         .filter(|(vertex, rebuilt)| {
-            let truth: hashbrown::HashSet<mesh_graph::HalfedgeId> =
+            let truth: crate::hash::HashSet<mesh_graph::HalfedgeId> =
                 rebuilt.iter().copied().collect();
             stored.get(vertex).is_none_or(|kept| *kept != truth)
         })

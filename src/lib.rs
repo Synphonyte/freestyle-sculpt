@@ -33,6 +33,7 @@ use serde::Deserialize;
 
 ///Deformation fields to do the vertex manipulation
 pub mod deformation;
+pub mod hash;
 mod integrations;
 /// Ray casting onto mesh graphs
 pub mod ray;

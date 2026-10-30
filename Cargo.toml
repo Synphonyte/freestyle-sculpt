@@ -15,8 +15,14 @@ anyhow = "1"
 bevy = { version = "0.19", default-features = false, optional = true }
 cfg-if = { version = "1", optional = true }
 derive_more = { version = "2", features = ["deref", "deref_mut"] }
+foldhash = "0.2"
 glam = "0.33"
-hashbrown = "0.17"
+hashbrown = { version = "0.17", default-features = false, features = [
+    "allocator-api2",
+    "equivalent",
+    "inline-more",
+    "raw-entry",
+] }
 itertools = "0.15"
 lazy_static = { version = "1.5", optional = true }
 mesh-graph = "0.11"
@@ -50,3 +56,8 @@ instrumentation = [
 [dev-dependencies]
 serde_json = "1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# TEMPORARY: validate the merge/collapse fix against the local mesh-graph
+# before reverting to the published crate.
+[patch.crates-io]
+mesh-graph = { path = "../mesh-graph" }

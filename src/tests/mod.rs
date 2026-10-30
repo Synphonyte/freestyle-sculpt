@@ -25,7 +25,7 @@ impl crate::selectors::MeshSelector for StaleIdSelector {
         _mesh_graph: &MeshGraph,
         _face_intersection: &crate::ray::FaceIntersection,
     ) -> crate::selectors::WeightedSelection {
-        use hashbrown::HashMap;
+        use crate::hash::HashMap;
 
         // The null key is never present in any `SlotMap`.
         crate::selectors::WeightedSelection {

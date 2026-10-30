@@ -1,5 +1,5 @@
+use crate::hash::HashSet;
 use glam::{Mat4, Vec3Swizzles};
-use hashbrown::HashSet;
 use mesh_graph::{MeshGraph, Polygon2};
 use parry3d::bounding_volume::Aabb;
 use tracing::{error, instrument, warn};
@@ -92,7 +92,7 @@ pub fn punch_hole(
     let mut converged = false;
 
     for _ in 0..MAX_PUNCH_ITERATIONS {
-        let mut vertex_ids = HashSet::new();
+        let mut vertex_ids = HashSet::default();
 
         for face_idx in mesh_graph.bvh.intersect_aabb(&aabb) {
             // The BVH can contain stale entries for faces removed during cleanup,

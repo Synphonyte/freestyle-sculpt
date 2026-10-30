@@ -712,6 +712,51 @@ mod tests {
         eprintln!("{iterations} second-fixture welds all manifold");
     }
 
+    /// The weld soak at the small gaps, where the offset sheets coincide (0.05) or end up
+    /// one rounding step apart (0.1), over n = 8..=10.
+    ///
+    /// With `--features instrumentation` it also reports how many coincident cross-ring
+    /// pairs `merge_vertices_one_rings` still had to fuse after the zip: zero means no
+    /// contact reaches the merge any more and its fusion block can go.
+    #[test]
+    #[ignore = "slow"]
+    fn weld_soak_small_gaps() {
+        let mut failures = Vec::new();
+
+        for gap in [0.05f32, 0.1] {
+            for n in 8usize..=10 {
+                #[cfg(feature = "instrumentation")]
+                let fusions_before = mesh_graph::coincident_fusion_count();
+
+                let (mesh_graph, boundary) = weld_and_count(n, gap);
+                let manifold = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    assert_manifold(&mesh_graph, "small-gap soak")
+                }))
+                .is_ok();
+
+                #[cfg(feature = "instrumentation")]
+                let fusions = mesh_graph::coincident_fusion_count() - fusions_before;
+                #[cfg(not(feature = "instrumentation"))]
+                let fusions = "n/a";
+
+                eprintln!(
+                    "SMALL GAP n={n} gap={gap}: faces {} | boundary {boundary} ({}) | \
+                     manifold {manifold} | merge fusions {fusions}",
+                    mesh_graph.faces.len(),
+                    describe_boundary(&mesh_graph)
+                );
+
+                if boundary != 0 || !manifold {
+                    failures.push(format!(
+                        "n={n} gap={gap}: {boundary} boundary, manifold {manifold}"
+                    ));
+                }
+            }
+        }
+
+        assert!(failures.is_empty(), "small-gap welds failed: {failures:?}");
+    }
+
     /// How the boundary of a welded mesh breaks down: the halves whose twin carries a
     /// face (a hole rim) versus wire halves (both sides face-less) versus orphaned ones.
     fn describe_boundary(mesh_graph: &MeshGraph) -> String {

@@ -3,6 +3,13 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+- Updated `mesh-graph` to 0.12, `parry3d` to 0.31, `bevy` to 0.20 and `rerun` to 0.40.
+  `TopologyManager`'s protected sets are now `mesh_graph::hash` sets
+- `morphological_open_close` zips sheets that its offset puts exactly face to face
+  before merging, which used to tear holes
+
 ## [0.12.0] - 2026-09-13
 
 - Updated dependency `mesh-graph` to 0.11

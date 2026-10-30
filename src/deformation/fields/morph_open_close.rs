@@ -148,22 +148,15 @@ fn apply_phase<M>(
             }
         }
 
-        // Sheets that were `2 * amount` apart and offset towards each other land exactly
-        // on top of each other. Zip them before any merge sees the double layer: merging
-        // into it leaves flaps that the merge's cleanup deletes, tearing holes nothing can
-        // close.
+        // Sheets `2 * amount` apart now coincide; merging into that tears holes.
         zip_coincident_sheets(mesh_graph, topology_manager);
 
         cleanup_mesh(mesh_graph, params, topology_manager, true);
     }
 }
 
-/// Zips every patch where two sheets lie exactly face to face
-/// ([`MeshGraph::zip_coincident_patches`]) and drops what it removed from the protected
-/// sets.
-///
-/// The whole mesh is the scope: the offset that precedes this moves every vertex, and a
-/// vertex can land on one that stayed put.
+/// [`MeshGraph::zip_coincident_patches`] over the whole mesh (the offset moved every
+/// vertex), keeping the protected sets free of dead ids.
 fn zip_coincident_sheets(mesh_graph: &mut MeshGraph, topology_manager: &mut TopologyManager) {
     let scope = mesh_graph.vertices.keys().collect::<Vec<_>>();
     let zip = mesh_graph.zip_coincident_patches(scope);
@@ -239,8 +232,7 @@ mod tests {
     use super::*;
     use mesh_graph::primitives::IcoSphere;
 
-    /// A closed, axis-aligned cube from `origin` with `size`, `n` quads per side, wound
-    /// outwards.
+    /// Closed cube, `n` quads per side, wound outwards.
     fn tessellated_cube(origin: Vec3, size: f32, n: usize) -> (Vec<Vec3>, Vec<usize>) {
         let mut index: hashbrown::HashMap<[usize; 3], usize> = hashbrown::HashMap::new();
         let mut positions = Vec::new();
@@ -279,7 +271,7 @@ mod tests {
         (positions, indices)
     }
 
-    /// Two unit cubes side by side along x, `gap` apart, as one mesh.
+    /// Two unit cubes `gap` apart along x.
     fn two_cubes(gap: f32, n: usize) -> MeshGraph {
         let (mut positions, mut indices) = tessellated_cube(Vec3::ZERO, 1.0, n);
         let (other_positions, other_indices) =
@@ -301,8 +293,6 @@ mod tests {
             .count()
     }
 
-    /// Two cubes touching on a whole side are zipped into one closed box, and nothing the
-    /// zip removed stays protected.
     #[test]
     fn zip_coincident_sheets_joins_touching_cubes() {
         let n = 4;
@@ -311,7 +301,7 @@ mod tests {
         let mut tm = TopologyManager::new(&mesh, params);
         let (vertices, faces) = (mesh.vertices.len(), mesh.faces.len());
 
-        // Protect everything on the contact plane, where the zip fuses and removes.
+        // Protect the contact plane, where the zip removes.
         for (v_id, position) in &mesh.positions {
             if position.x == 1.0 {
                 tm.protected_vertices.insert(v_id);
@@ -323,8 +313,7 @@ mod tests {
 
         zip_coincident_sheets(&mut mesh, &mut tm);
 
-        // Both layers of the n x n contact side go; its (n + 1)^2 vertices on one cube are
-        // fused into the other's, whose inner (n - 1)^2 are left without faces.
+        // Both contact sides go; one side's vertices fuse, the other's inner ones die.
         assert_eq!(mesh.faces.len(), faces - 2 * 2 * n * n);
         assert_eq!(
             mesh.vertices.len(),
@@ -343,12 +332,11 @@ mod tests {
         );
     }
 
-    /// The gap=0.05 weld: closing by half the gap puts the two facing sides exactly on the
-    /// midplane, where the zip joins them before any merge runs. The weld ends closed.
+    /// The gap=0.05 weld: closing by half the gap lands both sides on the midplane.
     #[test]
     fn close_joins_sheets_that_meet_on_the_midplane() {
         let mut mesh = two_cubes(0.05, 8);
-        // The weld's own resolution: `min_edge_length_squared` 0.0096.
+        // `min_edge_length_squared` 0.0096, as in the weld.
         let params = SculptParams::new(0.2);
         let mut tm = TopologyManager::new(&mesh, params);
 

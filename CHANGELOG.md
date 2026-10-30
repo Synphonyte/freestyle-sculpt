@@ -5,14 +5,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Updated dependencies `mesh-graph` to its unreleased 0.12 (`main`), `parry3d` to 0.31,
-  `bevy` to 0.20 and `rerun` to 0.40. `TopologyManager::protected_vertices` and
-  `protected_halfedges` are now `mesh_graph::hash` sets, which is what mesh-graph's ops
-  take
+- Updated `mesh-graph` to 0.12, `parry3d` to 0.31, `bevy` to 0.20 and `rerun` to 0.40.
+  `TopologyManager`'s protected sets are now `mesh_graph::hash` sets
 - `morphological_open_close` zips sheets that its offset puts exactly face to face
-  (`MeshGraph::zip_coincident_patches`) after every offset step, before any collision
-  merge. A close by half the gap between two sheets lands them on the same plane, and
-  merging into that double layer used to tear holes
+  before merging, which used to tear holes
 
 ## [0.12.0] - 2026-09-13
 

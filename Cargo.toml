@@ -25,7 +25,7 @@ hashbrown = { version = "0.17", default-features = false, features = [
 ] }
 itertools = "0.15"
 lazy_static = { version = "1.5", optional = true }
-mesh-graph = { git = "https://github.com/Synphonyte/mesh-graph", branch = "claude/eager-thompson-fxecrq" }
+mesh-graph = { git = "https://github.com/Synphonyte/mesh-graph", branch = "main" }
 ordered-float = "5"
 parry3d = "0.31"
 rapier3d = { version = "0.35" }

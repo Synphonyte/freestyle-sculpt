@@ -29,6 +29,41 @@ fn weld_capture_enabled() -> bool {
     std::env::var("WELD_CAPTURE").is_ok_and(|v| v != "0")
 }
 
+/// Debug hook: `WELD_DUMP=<path>` writes the exact state before the first merge that opens
+/// a watertight mesh to `<path>` as JSON (mesh, outgoing lists in their live order, the
+/// pair, the flip threshold and the protected sets), then panics. mesh-graph's
+/// `replay_merge_dump` test replays it.
+#[cfg(all(test, feature = "instrumentation"))]
+fn weld_dump_path() -> Option<String> {
+    std::env::var("WELD_DUMP")
+        .ok()
+        .filter(|path| !path.is_empty())
+}
+
+#[cfg(all(test, feature = "instrumentation"))]
+impl TopologyManager {
+    /// The `WELD_DUMP` state before merging `v_id1` and `v_id2` (see [`weld_dump_path`]).
+    fn merge_dump(
+        &self,
+        mesh_graph: &MeshGraph,
+        v_id1: VertexId,
+        v_id2: VertexId,
+        flip_threshold_sqr: f32,
+    ) -> serde_json::Value {
+        let outgoing: Vec<(VertexId, &Vec<HalfedgeId>)> =
+            mesh_graph.outgoing_halfedges.iter().collect();
+        serde_json::json!({
+            "mesh": mesh_graph,
+            "outgoing": outgoing,
+            "v1": v_id1,
+            "v2": v_id2,
+            "flip_threshold_sqr": flip_threshold_sqr,
+            "protected_vertices": self.protected_vertices.iter().collect::<Vec<_>>(),
+            "protected_halfedges": self.protected_halfedges.iter().collect::<Vec<_>>(),
+        })
+    }
+}
+
 /// The weld-path collapse, wrapped in the collapse-phase capture: under
 /// `WELD_CAPTURE=1` the pre-op mesh is cloned, and if the collapse opens a
 /// previously-closed region (boundary gained with none before) or leaves a
@@ -1206,6 +1241,19 @@ impl TopologyManager {
                     Vec::new()
                 };
 
+                #[cfg(all(test, feature = "instrumentation"))]
+                let dump_before = weld_dump_path()
+                    .filter(|_| boundary_halfedges(mesh_graph) == 0)
+                    .map(|path| {
+                        let dump = self.merge_dump(
+                            mesh_graph,
+                            v_id1,
+                            v_id2,
+                            sculpt_params.min_edge_length_squared,
+                        );
+                        (path, dump)
+                    });
+
                 let merged = mesh_graph.merge_vertices_one_rings(
                     v_id1,
                     v_id2,
@@ -1213,6 +1261,18 @@ impl TopologyManager {
                     &mut self.protected_halfedges,
                     &mut self.protected_vertices,
                 );
+
+                #[cfg(all(test, feature = "instrumentation"))]
+                if let Some((path, dump)) = dump_before {
+                    let boundary_after = boundary_halfedges(mesh_graph);
+                    if boundary_after > 0 {
+                        std::fs::write(&path, dump.to_string()).unwrap();
+                        panic!(
+                            "WELD DUMP: merge {v_id1:?}+{v_id2:?} opened the mesh \
+                             (0 -> {boundary_after} boundary halfedges); state written to {path}"
+                        );
+                    }
+                }
 
                 if capture {
                     let manifold_after = manifold_problems(mesh_graph);

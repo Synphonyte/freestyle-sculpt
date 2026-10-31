@@ -12,11 +12,23 @@ pub use topology::*;
 pub use traits::*;
 
 use crate::SculptParams;
+use glam::Vec3;
 use mesh_graph::EdgeLengthCleanup;
 
 /// Upper bound on cleanup iterations to guarantee termination even if collapse, subdivision
 /// and collision merging keep producing new work for each other.
 const MAX_CLEANUP_ITERATIONS: usize = 1000;
+
+/// The offset of moving `amount` along `normal`; zero if the normal is non-finite.
+/// A NaN offset would write a NaN position, which no cleanup can repair.
+#[inline]
+pub(crate) fn normal_offset(normal: Vec3, amount: f32) -> Vec3 {
+    if normal.is_finite() {
+        normal * amount
+    } else {
+        Vec3::ZERO
+    }
+}
 
 /// Brings the mesh back inside the edge-length band, merging colliding sheets on the
 /// way when `allow_topology_change` is set.
@@ -113,5 +125,20 @@ fn combine(collapse: EdgeLengthCleanup, subdivide: EdgeLengthCleanup) -> EdgeLen
         EdgeLengthCleanup::Converged
     } else {
         EdgeLengthCleanup::Stalled
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normal_offset_ignores_a_non_finite_normal() {
+        assert_eq!(normal_offset(Vec3::NAN, 1.0), Vec3::ZERO);
+        assert_eq!(
+            normal_offset(Vec3::new(0.0, f32::INFINITY, 0.0), -2.0),
+            Vec3::ZERO
+        );
+        assert_eq!(normal_offset(Vec3::X, 2.0), Vec3::new(2.0, 0.0, 0.0));
     }
 }

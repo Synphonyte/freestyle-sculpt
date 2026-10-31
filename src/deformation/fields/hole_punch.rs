@@ -1,5 +1,5 @@
 use crate::hash::HashSet;
-use glam::{Mat4, Vec3Swizzles};
+use glam::{Mat4, Vec3, Vec3Swizzles};
 use mesh_graph::{MeshGraph, Polygon2};
 use parry3d::bounding_volume::Aabb;
 use tracing::{error, instrument, warn};
@@ -8,7 +8,7 @@ use tracing::{error, instrument, warn};
 use crate::deformation::journal::{self};
 use crate::{
     SculptParams,
-    deformation::{TopologyManager, cleanup_mesh},
+    deformation::{TopologyManager, cleanup_mesh, normal_offset},
 };
 
 /// Punches a hole with the given shape projected from the camera.
@@ -138,6 +138,13 @@ pub fn punch_hole(
                     continue;
                 };
 
+                // No usable direction: skip it, and don't count it as progress, or a
+                // zero offset keeps `changed` true until `MAX_PUNCH_ITERATIONS`.
+                let move_vec = normal_offset(normal, neg_max_move_dist);
+                if move_vec == Vec3::ZERO {
+                    continue;
+                }
+
                 #[cfg(feature = "rerun")]
                 {
                     use mesh_graph::utils::vec3_array;
@@ -151,8 +158,6 @@ pub fn punch_hole(
                         )
                         .unwrap();
                 }
-                let move_vec = normal * neg_max_move_dist;
-
                 // already checked for existence above
                 mesh_graph.positions[v_id] += move_vec;
 

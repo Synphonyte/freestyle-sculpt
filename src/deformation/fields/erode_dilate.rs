@@ -2,7 +2,7 @@ use glam::Vec3;
 use mesh_graph::MeshGraph;
 
 use crate::{
-    deformation::{DeformationField, update_face_intersection},
+    deformation::{DeformationField, normal_offset, update_face_intersection},
     impl_deformation_field_boilerplate,
     ray::FaceIntersection,
     selectors::MeshSelector,
@@ -58,11 +58,29 @@ impl DeformationField for ErodeDilateDeformation {
         if let Some(normals) = &mesh_graph.vertex_normals
             && let Some(normal) = normals.get(vertex)
         {
-            normal * self.amount
+            normal_offset(*normal, self.amount)
         } else {
             Vec3::ZERO
         }
     }
 
     impl_deformation_field_boilerplate!();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use slotmap::SecondaryMap;
+
+    #[test]
+    fn vertex_movement_ignores_a_non_finite_normal() {
+        let mut mesh = MeshGraph::triangles(&[Vec3::ZERO, Vec3::X, Vec3::Y]).unwrap();
+        let v_id = mesh.vertices.keys().next().unwrap();
+        let mut normals = SecondaryMap::new();
+        normals.insert(v_id, Vec3::NAN);
+        mesh.vertex_normals = Some(normals);
+
+        let field = ErodeDilateDeformation::new(1.0);
+        assert_eq!(field.vertex_movement(v_id, Vec3::ZERO, &mesh), Vec3::ZERO);
+    }
 }

@@ -5,7 +5,10 @@ use mesh_graph::MeshGraph;
 use parry3d::query::PointQuery;
 use tracing::{error, instrument};
 
-use crate::{SculptParams, deformation::TopologyManager, deformation::cleanup_mesh};
+use crate::{
+    SculptParams,
+    deformation::{TopologyManager, cleanup_mesh, normal_offset},
+};
 
 /// Morphological open/close — global mesh operator.
 ///
@@ -133,7 +136,7 @@ fn apply_phase<M>(
                 }
 
                 if let Some(n) = normals.get(v_id) {
-                    *pos += *n * signed_amount * factor;
+                    *pos += normal_offset(*n, signed_amount * factor);
                 }
             }
         } else {
@@ -144,7 +147,7 @@ fn apply_phase<M>(
                 }
 
                 if let Some(n) = mesh_graph.vertex_normals.as_ref().and_then(|m| m.get(v_id)) {
-                    *pos += *n * signed_amount * factor;
+                    *pos += normal_offset(*n, signed_amount * factor);
                 }
             }
         }

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `TopologyManager`'s protected sets are now `mesh_graph::hash` sets
 - `morphological_open_close` zips sheets that its offset puts exactly face to face
   before merging, which used to tear holes
+- Vertex movement along normals ignores non-finite normals instead of turning the
+  position into NaN. Hole punching also stops counting a zero offset as progress, and
+  the collision merge gate skips zero or non-finite normals like missing ones
 
 ## [0.12.0] - 2026-09-13
 

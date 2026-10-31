@@ -1395,9 +1395,8 @@ impl<'a> PhysicsHooks for TopologyPhysicsHooks<'a> {
         if halfedge_from_to.is_some() {
             false
         } else {
-            // A missing normal means merge directionality cannot be judged; skip the
-            // pair. This is transient by design: vertices created mid-cleanup (e.g.
-            // hole-punch subdivision) only get normals on the next full recompute.
+            // Missing, zero or non-finite: direction cannot be judged. Skip the pair.
+            // (Vertices created mid-cleanup get normals on the next recompute.)
             let Some(&norm_1) = self
                 .mesh_graph
                 .vertex_normals
@@ -1414,6 +1413,14 @@ impl<'a> PhysicsHooks for TopologyPhysicsHooks<'a> {
             else {
                 return false;
             };
+
+            if !norm_1.is_finite()
+                || !norm_2.is_finite()
+                || norm_1.length_squared() == 0.0
+                || norm_2.length_squared() == 0.0
+            {
+                return false;
+            }
 
             norm_1.dot(norm_2) <= 0.3
         }

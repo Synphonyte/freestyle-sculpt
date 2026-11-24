@@ -1,3 +1,6 @@
+/// Test-only sampling of the phases inside [`cleanup_mesh`]; see its module docs.
+#[cfg(test)]
+pub(crate) mod cleanup_probe;
 mod fields;
 /// Debug-only operation journal (`instrumentation` feature); crate-internal, not
 /// part of the public API.
@@ -37,6 +40,11 @@ pub(crate) fn normal_offset(normal: Vec3, amount: f32) -> Vec3 {
 /// means edges remain out of band and further passes will not fix it on their own, so
 /// a caller that loops on geometric change (rather than on mesh quality) can stop
 /// instead of spinning.
+///
+/// Each iteration is one collapse/subdivide pair followed by (with
+/// `allow_topology_change`) one merge, so a defect can come from either half. In
+/// tests, `cleanup_probe` samples the state at those three points, which is the
+/// only way to tell the two apart from outside this function.
 pub fn cleanup_mesh(
     mesh_graph: &mut MeshGraph,
     params: &SculptParams,
@@ -48,6 +56,9 @@ pub fn cleanup_mesh(
     for _ in 0..MAX_CLEANUP_ITERATIONS {
         #[cfg(feature = "rerun")]
         mesh_graph.log_rerun();
+
+        #[cfg(test)]
+        cleanup_probe::record(cleanup_probe::Phase::Entry, mesh_graph);
 
         // TODO : Optimize: After a collision merge only the affected halfedges should be considered
         #[cfg(feature = "instrumentation")]
@@ -82,6 +93,9 @@ pub fn cleanup_mesh(
             &mut topology_manager.protected_vertices,
         );
 
+        #[cfg(test)]
+        cleanup_probe::record(cleanup_probe::Phase::Cleanup, mesh_graph);
+
         if allow_topology_change {
             topology_manager.sync_mesh_graph(mesh_graph, params);
 
@@ -93,6 +107,9 @@ pub fn cleanup_mesh(
                 // edge lengths in band, which is a separate question from merging.
                 return combine(collapse_outcome, subdivide_outcome);
             }
+
+            #[cfg(test)]
+            cleanup_probe::record(cleanup_probe::Phase::Merge, mesh_graph);
         } else {
             if collapse_outcome.converged() && subdivide_outcome.converged() {
                 // Every edge is within the length band, so there is nothing left to

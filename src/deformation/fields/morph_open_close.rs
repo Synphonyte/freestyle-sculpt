@@ -1034,10 +1034,137 @@ mod tests {
         );
         assert_manifold(&mesh_graph, &label);
     }
+
+    /// How `after` is structurally worse than `before`, in the vocabulary of the
+    /// weld defects: wire halves, non-manifold edges, pinched vertices, and a closed
+    /// mesh that opened. Empty when the phase kept or improved the state.
+    ///
+    /// Boundary halves are only compared when `before` is closed: subdividing a
+    /// boundary edge of a mesh that is already open splits one boundary half into
+    /// two, which is legitimate.
+    fn regressions(
+        before: &crate::deformation::cleanup_probe::Sample,
+        after: &crate::deformation::cleanup_probe::Sample,
+    ) -> Vec<String> {
+        let mut worse = Vec::new();
+
+        if after.wire_halves > before.wire_halves {
+            worse.push(format!(
+                "wire halves {} -> {}",
+                before.wire_halves, after.wire_halves
+            ));
+        }
+        if after.non_manifold_edges > before.non_manifold_edges {
+            worse.push(format!(
+                "non-manifold edges {} -> {}",
+                before.non_manifold_edges, after.non_manifold_edges
+            ));
+        }
+        if after.pinched_vertices > before.pinched_vertices {
+            worse.push(format!(
+                "pinched vertices {} -> {}",
+                before.pinched_vertices, after.pinched_vertices
+            ));
+        }
+        if before.boundary_halves == 0 && after.boundary_halves > 0 {
+            worse.push(format!(
+                "closed mesh -> {} boundary halfedges",
+                after.boundary_halves
+            ));
+        }
+
+        worse
     }
 
-    /// The same contact case, opened by a *merge order* that is in-range for the
-    /// shipped soak.
+    /// The cleanup phases *between* the merges must not open the mesh - asserted
+    /// on the phases, not on the welded result.
+    ///
+    /// A weld's `cleanup_mesh` alternates one collapse/subdivide pair with one
+    /// merge (`update_collisions_and_merge` merges a single pair per call) until
+    /// no merge is left. The welded result therefore cannot attribute a defect:
+    /// mesh-graph's merge probe sees the merge op only - the `end_wire` doc in
+    /// `mesh-graph/src/ops/merge_one_ring/rim_probe.rs` names exactly that gap -
+    /// and a wire a *later* merge closes again never reaches the final mesh at
+    /// all. So this test samples every phase boundary of the weld (the test-only
+    /// `cleanup_probe` in `src/deformation/cleanup_probe.rs`) and asserts per
+    /// phase that the mesh did not get worse (see [`regressions`]): no wire half,
+    /// no non-manifold edge, no pinched vertex, and a closed mesh stays closed.
+    ///
+    /// The cells are the four the weld's defects came from: (n=10, gap=1.5) and
+    /// (n=10, gap=0.3) used to end in a wire edge
+    /// ([`weld_gap_1_5_leaves_no_wire`], [`weld_gap_0_3_leaves_no_wire`]), (n=9,
+    /// gap=0.1) in a triangle hole ([`weld_gap_0_1_stays_watertight`]), and (n=8,
+    /// gap=0.05) in the coincident fusion's hole. Each cell runs in the shipping and
+    /// in the reversed merge order: the cleanup's face removals are what the weld
+    /// hunt's reversed order made fail.
+    #[test]
+    fn weld_cleanup_between_merges_opens_nothing() {
+        use crate::deformation::cleanup_probe::{Phase, with_recording};
+        use crate::deformation::topology::{WeldOrder, with_weld_order};
+
+        for order in [WeldOrder::SHIPPING, WeldOrder::REVERSED] {
+            let order_label = order_label(order);
+            for (n, gap) in [(8usize, 0.05f32), (9, 0.1), (10, 0.3), (10, 1.5)] {
+                let label = format!("{order_label} phase weld (n={n}, gap={gap})");
+                let ((mesh_graph, boundary), samples) =
+                    with_recording(|| with_weld_order(order, || weld_and_count(n, gap)));
+
+                let (mut cleanup_phases, mut merge_phases) = (0usize, 0usize);
+
+                for pair in samples.windows(2) {
+                    let (before, after) = (pair[0], pair[1]);
+                    let phase = match (before.phase, after.phase) {
+                        (Phase::Entry, Phase::Cleanup) => "cleanup",
+                        (Phase::Cleanup, Phase::Merge) => "merge",
+                        // Nothing touches the topology between a merge and the next
+                        // iteration's entry. The caller's vertex movement and sheet zip
+                        // sit between one `cleanup_mesh` call and the next, and are not
+                        // this test's subject.
+                        _ => continue,
+                    };
+                    if after.phase == Phase::Merge {
+                        merge_phases += 1;
+                    } else {
+                        cleanup_phases += 1;
+                    }
+
+                    let worse = regressions(&before, &after);
+                    assert!(
+                        worse.is_empty(),
+                        "{label}: the {phase} phase made the mesh worse ({} faces -> {}): {worse:?}",
+                        before.faces,
+                        after.faces,
+                    );
+                }
+
+                eprintln!(
+                    "PHASES {order_label} n={n} gap={gap}: {cleanup_phases} cleanup + \
+                     {merge_phases} merge phases, end {} faces, boundary {boundary} ({})",
+                    mesh_graph.faces.len(),
+                    describe_boundary(&mesh_graph)
+                );
+
+                // Without samples every assertion above is vacuous: the weld has to
+                // reach the cleanup loop, and the loop has to merge for there to be a
+                // between-merge cleanup at all.
+                assert!(
+                    cleanup_phases > 0 && merge_phases > 0,
+                    "{label}: the probe recorded {cleanup_phases} cleanup and {merge_phases} \
+                     merge phases; there is nothing to assert on"
+                );
+
+                assert_eq!(
+                    boundary,
+                    0,
+                    "{label}: the weld left {boundary} boundary halfedges ({})",
+                    describe_boundary(&mesh_graph)
+                );
+                assert_manifold(&mesh_graph, &label);
+            }
+        }
+    }
+
+    /// The same contact case, opened by a *merge order* rather than by the gap size.
     ///
     /// (n=8, gap=1.25, amount=0.625) is inside the second-fixture soak's clean
     /// range and stays watertight in the shipping order; under

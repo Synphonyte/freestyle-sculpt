@@ -39,6 +39,14 @@ jobs:
       - name: Run tests
         run: cargo test
 
+      # The weld soaks, the order sweep and the 200-iteration flake loop are
+      # `#[ignore]`d for runtime (~30 s). A release is where they have to run:
+      # they are the broadest watertightness assertions in the crate, and a
+      # published version is what the weld tests of every downstream user build
+      # against.
+      - name: Run slow topology tests
+        run: cargo test --release -- --ignored
+
       - name: Publish crate freestyle-sculpt
         uses: katyo/publish-crates@v2
         with:

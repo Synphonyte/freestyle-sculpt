@@ -157,6 +157,11 @@ fn capture_collapse_failure(
 /// The merge-order knob of the weld soak: `None` keeps the shipping order,
 /// `Some(seed)` shuffles it deterministically (seed 0 is the shipping order).
 fn weld_order_seed() -> Option<u64> {
+    #[cfg(test)]
+    if let Some(seed) = SEED_OVERRIDE.with(std::cell::Cell::get) {
+        return seed;
+    }
+
     use std::sync::OnceLock;
 
     static SEED: OnceLock<Option<u64>> = OnceLock::new();
@@ -171,6 +176,29 @@ fn weld_order_seed() -> Option<u64> {
         },
         Err(_) => None,
     })
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A test's forced merge order, `Some(None)` being the shipping order. The env
+    /// var is read once per process, so a sweep needs this to vary it in one run.
+    static SEED_OVERRIDE: std::cell::Cell<Option<Option<u64>>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Runs `f` in the merge order `seed` names (`None` = shipping order) and restores
+/// the previous order afterwards, panics included.
+#[cfg(test)]
+pub(crate) fn with_weld_order_seed<R>(seed: Option<u64>, f: impl FnOnce() -> R) -> R {
+    struct Restore(Option<Option<u64>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            SEED_OVERRIDE.with(|cell| cell.set(self.0));
+        }
+    }
+
+    let _restore = Restore(SEED_OVERRIDE.with(|cell| cell.replace(Some(seed))));
+    f()
 }
 
 /// `WELD_ORDER=reversed` reproduces the reversed merge order.

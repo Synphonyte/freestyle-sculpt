@@ -760,6 +760,63 @@ mod tests {
         assert!(failures.is_empty(), "small-gap welds failed: {failures:?}");
     }
 
+    /// The same small gaps under merge orders the soaks cannot reach.
+    ///
+    /// `weld_order_seed` reads `WELD_ORDER_SEED` once per process, and the soaks run
+    /// the shipping order, so a sweep needs to force the order per weld. That is what
+    /// [`with_weld_order_seed`] is for. A non-shipping order has opened gaps the
+    /// shipping one did not (`WELD_ORDER_SEED=19` at n=8, gap=1.25, a collapse-phase
+    /// defect kept reproducible in [`diag_merge_order_opens_gap_125`]), and merge
+    /// order also decides which rim a coincident fusion meets, which is what the
+    /// gap-0.05 and gap-0.1 repros are about.
+    ///
+    /// `WELD_SWEEP_SEEDS` sets how many orders to run (default 8: shipping plus
+    /// seeds 1..=7). At the default range that is 96 welds, about 10 s.
+    #[test]
+    #[ignore = "slow"]
+    fn weld_order_sweep_stays_watertight() {
+        use crate::deformation::topology::with_weld_order_seed;
+
+        let seeds: u64 = std::env::var("WELD_SWEEP_SEEDS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(8);
+        let previous_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+
+        let mut failures = Vec::new();
+        for seed in 0..seeds {
+            // Seed 0 is the shipping order.
+            let order = (seed > 0).then_some(seed);
+            for gap in [0.05f32, 0.1, 0.25, 1.25] {
+                for n in 8usize..=10 {
+                    let (mesh_graph, boundary) =
+                        with_weld_order_seed(order, || weld_and_count(n, gap));
+                    let manifold = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        assert_manifold(&mesh_graph, "order sweep")
+                    }))
+                    .is_ok();
+
+                    eprintln!(
+                        "ORDER {order:?} n={n} gap={gap}: {} faces | boundary {boundary} ({}) | \
+                         manifold {manifold}",
+                        mesh_graph.faces.len(),
+                        describe_boundary(&mesh_graph)
+                    );
+
+                    if boundary != 0 || !manifold {
+                        failures.push(format!(
+                            "{order:?} n={n} gap={gap}: {boundary} boundary, manifold {manifold}"
+                        ));
+                    }
+                }
+            }
+        }
+
+        std::panic::set_hook(previous_hook);
+        assert!(failures.is_empty(), "order sweep failed: {failures:?}");
+    }
+
     /// How the boundary of a welded mesh breaks down: the halves whose twin carries a
     /// face (a hole rim) versus wire halves (both sides face-less) versus orphaned ones.
     fn describe_boundary(mesh_graph: &MeshGraph) -> String {
@@ -929,18 +986,18 @@ mod tests {
     /// shipped soak.
     ///
     /// (n=8, gap=1.25, amount=0.625) is inside the second-fixture soak's clean
-    /// range and stays watertight in the shipping order, but under
-    /// `WELD_ORDER_SEED=19` the weld leaves 11 boundary halfedges. The
-    /// `MESH_GRAPH_HOLE_CHECK=1` probe attributes the hole to
+    /// range and stays watertight in the shipping order; under
+    /// `WELD_ORDER_SEED=19` the weld used to leave 11 boundary halfedges. The
+    /// `MESH_GRAPH_HOLE_CHECK=1` probe attributed the hole to
     /// `collapse_until_edges_above_min_length` changing the boundary edge set of
     /// a *closed* region (3 added), with three `flap removal` re-pairing events
     /// in the op trace directly before - the same flap-removal family as
     /// [`diag_contact_gap_leaves_a_hole`], reached via the merge order instead
-    /// of the gap size. The soak runs in the shipping order, so its cap does not
-    /// cover this.
+    /// of the gap size.
     ///
-    /// Kept as a print, not an assertion, so the case stays reproducible without
-    /// turning the suite red.
+    /// It closes now (0 boundary, 1368 faces), and
+    /// [`weld_order_sweep_stays_watertight`] runs this gap under every seed it
+    /// sweeps, so this stays only as the single-cell repro.
     #[test]
     #[ignore]
     fn diag_merge_order_opens_gap_125() {

@@ -619,6 +619,23 @@ mod tests {
             .count()
     }
 
+    /// Boundary halves whose twin is face-less too: an edge with no face on either
+    /// side, the one defect no hole filler can repair (`describe_boundary`'s
+    /// "wire").
+    fn wire_halves(mesh_graph: &MeshGraph) -> usize {
+        mesh_graph
+            .halfedges
+            .values()
+            .filter(|he| {
+                he.face.is_none()
+                    && he
+                        .twin
+                        .and_then(|twin| mesh_graph.halfedges.get(twin))
+                        .is_some_and(|twin| twin.face.is_none())
+            })
+            .count()
+    }
+
     /// Mirrors voxel-wasm's `apply_weld_amount`: the production weld derives the
     /// sculpt params from the mesh and runs a morphological close with a fresh
     /// `TopologyManager`.
@@ -660,13 +677,14 @@ mod tests {
     /// n = 8..=10, every cell in it welds watertight and manifold. It used to be
     /// capped at 1.25 because a 1.5 gap (`gap == amount * 2`, the walls exactly
     /// meeting) left a wire edge - that wire is fixed, see
-    /// [`diag_contact_gap_leaves_wire_at_large_gap`]. The lower bound is where the
-    /// defect still lives: 0.05 and 0.1 are the small-gap repros
-    /// ([`diag_contact_gap_leaves_a_hole`], and the collapse cases in mesh-graph).
-    /// A non-shipping order (e.g. `WELD_ORDER_SEED=19`) opened (n=8, gap=1.25) via
-    /// the same flap removal ([`diag_merge_order_opens_gap_125`]); the order sweep
-    /// covers those orders. This soak runs in the shipping order only, so its range
-    /// claim is about that order.
+    /// [`weld_gap_1_5_leaves_no_wire`]. The lower bound is where the defect lived:
+    /// 0.05 and 0.1 are the small-gap repros ([`weld_gap_0_1_stays_watertight`],
+    /// and the collapse cases in mesh-graph). A non-shipping order (e.g.
+    /// `WELD_ORDER_SEED=19`) opened (n=8, gap=1.25) via the same flap removal
+    /// ([`weld_seed_19_gap_1_25_stays_watertight`]); the order sweep covers those
+    /// orders.
+    /// This soak runs in the shipping order only, so its range claim is about that
+    /// order.
     #[test]
     #[ignore = "slow"]
     fn weld_soak_second_fixture() {
@@ -683,7 +701,7 @@ mod tests {
             // 0.5 is the smallest gap that still welds cleanly: 0.15..=2.25 are
             // watertight and manifold over this fixture, while 0.05 leaves a hole
             // (and panics at n=9) and 0.1 leaves the merge-phase hole of
-            // `diag_contact_gap_leaves_a_hole`.
+            // `weld_gap_0_1_stays_watertight`.
             let gap = 0.5 + (i % 8) as f32 * 0.25; // 0.5..=2.25 between the walls
             // Each wall grows by half the gap, so the two just meet. More would
             // make the sheets interpenetrate, which is not what the close is for.
@@ -900,86 +918,78 @@ mod tests {
     /// closer now recomputes the opened boundary every pass.
     ///
     /// Green since that landed (981 faces with 3 boundary halves -> 1012 with none), and clean
-    /// at n=8 and n=10 too.
+    /// at n=8 and n=10 too. Down to those 3 boundary halves from 17 along the way, and that
+    /// part was the *collapse* phase (`collapse_until_edges_above_min_length`, see the
+    /// `weld_collapse_cases` module in mesh-graph). With `WELD_CAPTURE=1` the *merge* capture
+    /// was what fired afterwards: a merge opened six boundary halfedges and no later merge's
+    /// region covered the triangle left behind. This was `diag_contact_gap_leaves_a_hole`,
+    /// kept as a print while that was live; the cell now closes, so it is this assertion.
     #[test]
     fn weld_gap_0_1_stays_watertight() {
         let (mesh_graph, boundary) = weld_and_count(9, 0.1);
         let label = "small-gap weld (n=9, gap=0.1)";
 
-        assert_manifold(&mesh_graph, label);
+        assert_eq!(wire_halves(&mesh_graph), 0, "{label}: wire halves left");
         assert_eq!(
             boundary,
             0,
             "{label}: the weld left {boundary} boundary halfedges ({})",
             describe_boundary(&mesh_graph)
         );
+        assert_manifold(&mesh_graph, label);
     }
 
-    /// The small-gap contact case that used to leave a **wire** edge.
+    /// The small-gap contact case that used to end in a **wire** edge (0 boundary
+    /// halfedges and 0 wire halves now).
     ///
-    /// Clean since the collapse closer landed (0 boundary, 0 wire halves). Same
-    /// family as `diag_contact_gap_leaves_a_hole` but a different failure: an edge
-    /// whose two halves are both face-less, which no hole-filler can repair - why
-    /// the second fixture checks it separately.
+    /// This was `diag_contact_gap_leaves_wire`, kept as a print while the wire was
+    /// live. The wire was the cleanup's, not the merge's: between two merges the
+    /// collapse of a short edge and a neighbouring `remove_face` both took a face
+    /// off the same edge's two halves, so both halves survived face-less - an edge
+    /// no hole filler can repair, which is why the second fixture checked it
+    /// separately from the boundary count.
     #[test]
-    #[ignore]
-    fn diag_contact_gap_leaves_wire() {
-        let mut mesh_graph = two_gapped_cubes_with(10, 0.3);
-        apply_weld_amount(&mut mesh_graph, 0.0);
-        apply_weld_amount(&mut mesh_graph, 0.15);
-        let wire = mesh_graph
-            .halfedges
-            .iter()
-            .filter(|(_, he)| {
-                he.face.is_none()
-                    && he
-                        .twin
-                        .and_then(|t| mesh_graph.halfedges.get(t))
-                        .is_some_and(|t| t.face.is_none())
-            })
-            .count();
-        eprintln!(
-            "contact case (n=10, gap=0.3): {} faces, {} boundary halfedges, {wire} wire halves",
-            mesh_graph.faces.len(),
-            boundary_halfedge_count(&mesh_graph)
+    fn weld_gap_0_3_leaves_no_wire() {
+        let (n, gap) = (10, 0.3);
+        let (mesh_graph, boundary) = weld_and_count(n, gap);
+        let label = format!("contact weld (n={n}, gap={gap})");
+
+        assert_eq!(wire_halves(&mesh_graph), 0, "{label}: wire halves left");
+        assert_eq!(
+            boundary,
+            0,
+            "{label}: the weld left {boundary} boundary halfedges ({})",
+            describe_boundary(&mesh_graph)
         );
+        assert_manifold(&mesh_graph, &label);
     }
 
-    /// The large-gap contact case that used to leave a **wire** edge.
+    /// The same contact case at the far end of the gap range (0 boundary
+    /// halfedges, 0 wire halves now).
     ///
-    /// Clean since the collapse closer landed (0 boundary, 0 wire halves). Found by
+    /// This was `diag_contact_gap_leaves_wire_at_large_gap`, found by
     /// [`weld_soak_second_fixture`]'s parameter sweep (iteration 14: n=10, gap=1.5,
-    /// amount=0.75) and the same wire as [`diag_contact_gap_leaves_wire`] but at the
-    /// far end of the gap range: `MESH_GRAPH_HOLE_CHECK=1` attributed it to
-    /// `collapse_until_edges_above_min_length`, where a twin-side face removal and a
-    /// neighbouring `remove_face` both took a face off the same edge's two halves and
-    /// the halves survived face-less.
-    ///
-    /// Kept as a print, not an assertion, so the case stays reproducible without
-    /// turning the suite red - and it was what capped the soak's gap range at 1.25
-    /// until the closer fixed it.
+    /// amount=0.75) and the same wire as [`weld_gap_0_3_leaves_no_wire`]. With
+    /// `MESH_GRAPH_HOLE_CHECK=1` it was attributed to the cleanup's
+    /// `collapse_until_edges_above_min_length`, where a twin-side face removal and
+    /// a neighbouring `remove_face` both took a face off the same edge's two
+    /// halves; it was also what capped the soak's gap range at 1.25 until the
+    /// closer fixed it.
     #[test]
-    #[ignore]
-    fn diag_contact_gap_leaves_wire_at_large_gap() {
-        let mut mesh_graph = two_gapped_cubes_with(10, 1.5);
-        apply_weld_amount(&mut mesh_graph, 0.0);
-        apply_weld_amount(&mut mesh_graph, 0.75);
-        let wire = mesh_graph
-            .halfedges
-            .iter()
-            .filter(|(_, he)| {
-                he.face.is_none()
-                    && he
-                        .twin
-                        .and_then(|t| mesh_graph.halfedges.get(t))
-                        .is_some_and(|t| t.face.is_none())
-            })
-            .count();
-        eprintln!(
-            "large-gap contact case (n=10, gap=1.5): {} faces, {} boundary halfedges, {wire} wire halves",
-            mesh_graph.faces.len(),
-            boundary_halfedge_count(&mesh_graph)
+    fn weld_gap_1_5_leaves_no_wire() {
+        let (n, gap) = (10, 1.5);
+        let (mesh_graph, boundary) = weld_and_count(n, gap);
+        let label = format!("large-gap contact weld (n={n}, gap={gap})");
+
+        assert_eq!(wire_halves(&mesh_graph), 0, "{label}: wire halves left");
+        assert_eq!(
+            boundary,
+            0,
+            "{label}: the weld left {boundary} boundary halfedges ({})",
+            describe_boundary(&mesh_graph)
         );
+        assert_manifold(&mesh_graph, &label);
+    }
     }
 
     /// The same contact case, opened by a *merge order* that is in-range for the

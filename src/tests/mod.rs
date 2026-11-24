@@ -246,3 +246,113 @@ fn erode_dilate_moves_vertices_without_normals() {
         "the brush did not dilate the sphere: max x {max_x}"
     );
 }
+
+/// A closed surface of revolution around the z axis: `rings` rings of `k`
+/// vertices from `z = 0` to `z = len`, radius `radius(z)`, closed by flat caps.
+fn surface_of_revolution(
+    k: usize,
+    rings: usize,
+    len: f32,
+    radius: impl Fn(f32) -> f32,
+) -> MeshGraph {
+    use glam::Vec3;
+
+    let ring = |j: usize| -> Vec<Vec3> {
+        let z = len * j as f32 / (rings - 1) as f32;
+        (0..k)
+            .map(|i| {
+                let a = std::f32::consts::TAU * i as f32 / k as f32;
+                Vec3::new(radius(z) * a.cos(), radius(z) * a.sin(), z)
+            })
+            .collect()
+    };
+
+    let mut soup = Vec::new();
+    for j in 0..rings - 1 {
+        let (a, b) = (ring(j), ring(j + 1));
+        for i in 0..k {
+            let i2 = (i + 1) % k;
+            soup.extend([a[i], a[i2], b[i2], a[i], b[i2], b[i]]);
+        }
+    }
+    let (bottom, top) = (ring(0), ring(rings - 1));
+    for i in 0..k {
+        let i2 = (i + 1) % k;
+        soup.extend([Vec3::ZERO, bottom[i2], bottom[i]]);
+        soup.extend([Vec3::new(0.0, 0.0, len), top[i], top[i2]]);
+    }
+
+    MeshGraph::triangles(&soup).expect("surface of revolution must build a mesh graph")
+}
+
+/// The number of connected components, and the vertex count of each.
+fn component_sizes(mesh_graph: &MeshGraph) -> Vec<usize> {
+    let mut seen = crate::hash::HashSet::default();
+    let mut sizes = Vec::new();
+
+    for start in mesh_graph.vertices.keys() {
+        if !seen.insert(start) {
+            continue;
+        }
+        let mut size = 0;
+        let mut stack = vec![start];
+        while let Some(v_id) = stack.pop() {
+            size += 1;
+            for n in mesh_graph.vertices[v_id].neighbours(mesh_graph) {
+                if seen.insert(n) {
+                    stack.push(n);
+                }
+            }
+        }
+        sizes.push(size);
+    }
+
+    sizes
+}
+
+/// Eroding an hourglass must cut its neck: the opposite walls of a part thinner
+/// than `max_thickness` are merged, splitting the mesh in two. A merge gate that
+/// only accepts sheets facing each other (as a crease fix once tried) leaves the
+/// neck as an ever thinner tube instead.
+///
+/// The bulbs are long and wide so that the open (erode, then dilate) leaves
+/// plenty of surface on either side of the cut and the mesh cannot vanish.
+#[test]
+fn eroding_an_hourglass_splits_its_neck() {
+    use crate::deformation::{TopologyManager, morphological_open_close};
+
+    const LEN: f32 = 12.0;
+    const BULB_RADIUS: f32 = 2.0;
+    const NECK_RADIUS: f32 = 0.3;
+    const NECK_HALF_LEN: f32 = 2.0;
+
+    let mut mesh_graph = surface_of_revolution(40, 61, LEN, |z| {
+        let t = ((z - LEN / 2.0).abs() / NECK_HALF_LEN).min(1.0);
+        NECK_RADIUS + (BULB_RADIUS - NECK_RADIUS) * t * t
+    });
+    mesh_graph.compute_vertex_normals();
+    assert_eq!(component_sizes(&mesh_graph).len(), 1);
+
+    let params = SculptParams::new(0.35);
+    let mut topology_manager = TopologyManager::new(&mesh_graph, params);
+
+    // Open: erode by 0.3, then dilate by 0.3. The neck is thinner than the erode.
+    morphological_open_close(&mut mesh_graph, &params, &mut topology_manager, 0.3, ());
+
+    let sizes = component_sizes(&mesh_graph);
+    let boundary = mesh_graph
+        .halfedges
+        .values()
+        .filter(|he| he.face.is_none())
+        .count();
+    let euler = mesh_graph.vertices.len() as i64 - (mesh_graph.halfedges.len() / 2) as i64
+        + mesh_graph.faces.len() as i64;
+
+    assert_eq!(sizes.len(), 2, "the neck was not cut: components {sizes:?}");
+    assert!(
+        sizes.iter().all(|&size| size > 100),
+        "a bulb lost most of its surface: components {sizes:?}"
+    );
+    assert_eq!(boundary, 0, "the cut left a hole");
+    assert_eq!(euler, 4, "expected two closed spheres");
+}

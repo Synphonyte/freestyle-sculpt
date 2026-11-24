@@ -55,7 +55,7 @@ fn main() {
                 save_log.run_if(input_just_pressed(KeyCode::KeyL)),
                 reset_log.run_if(input_just_pressed(KeyCode::KeyR)),
                 handle_morph_open_close.run_if(
-                    input_just_pressed(KeyCode::KeyO).or(input_just_pressed(KeyCode::KeyC)),
+                    input_just_pressed(KeyCode::KeyO).or_else(input_just_pressed(KeyCode::KeyC)),
                 ),
             ),
         )

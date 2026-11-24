@@ -1122,6 +1122,11 @@ impl TopologyManager {
             .user_data(vertex_id.into())
     }
 
+    /// Creates a collider per vertex, sized from `sculpt_params`.
+    ///
+    /// The collider radius is fixed here: [`Self::sync_mesh_graph`] only moves
+    /// existing colliders. If the sculpt params change, create a new
+    /// `TopologyManager`, or the old vertices keep the old merge distance.
     pub fn new(mesh_graph: &MeshGraph, sculpt_params: SculptParams) -> Self {
         let mut collider_set = ColliderSet::new();
         let mut vertex_id_to_collider_handle = HashMap::default();
@@ -1555,7 +1560,24 @@ impl<'a> PhysicsHooks for TopologyPhysicsHooks<'a> {
                 return false;
             }
 
-            norm_1.dot(norm_2) <= 0.3
+            if norm_1.dot(norm_2) > 0.3 {
+                return false;
+            }
+
+            // The two sheets must face each other: each vertex has to lie in front
+            // of the other along its normal. Across a convex crease (a cube edge,
+            // say) the normals are far apart too and the colliders overlap, but each
+            // vertex lies *behind* the other's tangent plane. Merging such a pair
+            // welds the crease to itself and adds a handle.
+            let (Some(&pos_1), Some(&pos_2)) = (
+                self.mesh_graph.positions.get(v_id1),
+                self.mesh_graph.positions.get(v_id2),
+            ) else {
+                return false;
+            };
+            let offset = pos_2 - pos_1;
+
+            norm_1.dot(offset) > 0.0 && norm_2.dot(offset) < 0.0
         }
     }
 }

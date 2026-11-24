@@ -43,10 +43,13 @@ impl DeformationField for ErodeDilateDeformation {
         &self,
         _mesh_graph: &MeshGraph,
         _selector: &dyn MeshSelector,
-        _strength: f32,
+        strength: f32,
         _intersection: &FaceIntersection,
     ) -> f32 {
-        self.amount * self.amount
+        // The movement is `normal * amount * weight * strength` with a unit normal
+        // and `weight <= 1`, so this bounds it.
+        let max_movement = self.amount * strength;
+        max_movement * max_movement
     }
 
     fn vertex_movement(

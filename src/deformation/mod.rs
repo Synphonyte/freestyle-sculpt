@@ -111,7 +111,13 @@ pub fn cleanup_mesh(
             #[cfg(test)]
             cleanup_probe::record(cleanup_probe::Phase::Merge, mesh_graph);
         } else {
+            // The marked sets only record what this call's collapses and splits
+            // created, to detect progress below. The topology branch clears them once
+            // nothing is left to merge; this branch has to as well, or they grow
+            // across every stroke and keep those vertices out of later merges.
             if collapse_outcome.converged() && subdivide_outcome.converged() {
+                topology_manager.protected_vertices.clear();
+                topology_manager.protected_halfedges.clear();
                 // Every edge is within the length band, so there is nothing left to
                 // iterate on. This used to be inferred from `protected_vertices` not
                 // growing, which could not tell a clean mesh from a marked set that
@@ -125,6 +131,8 @@ pub fn cleanup_mesh(
             // and further iterations cannot change that.
             let new_count = topology_manager.protected_vertices.len();
             if new_count == protected_vertices_count {
+                topology_manager.protected_vertices.clear();
+                topology_manager.protected_halfedges.clear();
                 return EdgeLengthCleanup::Stalled;
             }
             protected_vertices_count = new_count;

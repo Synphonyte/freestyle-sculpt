@@ -4,7 +4,7 @@ use itertools::Itertools;
 use mesh_graph::{MeshGraph, VertexId};
 use parry3d::query::PointQueryWithLocation;
 use slotmap::SecondaryMap;
-use tracing::{error, instrument};
+use tracing::{error, instrument, warn};
 
 #[cfg(feature = "instrumentation")]
 use crate::deformation::journal::{self};
@@ -91,6 +91,11 @@ pub trait DeformationField {
     /// This is the main method of this trait. It applies the deformation to the mesh graph.
     ///
     /// This method should be called after `on_pointer_move` returns `true`.
+    ///
+    /// `strength` must be finite. The movement is split into steps of at most
+    /// `params.max_move_dist_squared.sqrt()` so that collisions are not skipped, but
+    /// the step count is capped at 100: a larger movement per call takes bigger steps
+    /// and can let sheets pass through each other, so split it across calls instead.
     #[instrument(skip_all)]
     fn apply(
         &mut self,
@@ -107,13 +112,24 @@ pub trait DeformationField {
             return HashMap::default();
         };
 
+        debug_assert!(
+            strength.is_finite(),
+            "strength must be finite, got {strength}"
+        );
+
         let max_movement_squared =
             self.max_movement_squared(mesh_graph, selector, strength, intersection);
 
-        let steps = (max_movement_squared / params.max_move_dist_squared)
+        let needed_steps = (max_movement_squared / params.max_move_dist_squared)
             .sqrt()
-            .ceil()
-            .clamp(1.0, MAX_STEP_COUNT);
+            .ceil();
+        if needed_steps > MAX_STEP_COUNT {
+            warn!(
+                "movement needs {needed_steps} steps, capped at {MAX_STEP_COUNT}; \
+                 steps exceed max_move_dist and collisions can be missed"
+            );
+        }
+        let steps = needed_steps.clamp(1.0, MAX_STEP_COUNT);
 
         let factor = 1.0 / steps;
 
@@ -164,6 +180,24 @@ pub trait DeformationField {
             };
 
             vertex_to_weight = selector.select(mesh_graph, intersection).vertex_to_weight;
+
+            // The previous step's cleanup creates vertices (subdivision, merges) that
+            // have no normal yet. Fields that move along normals would leave them
+            // behind, and the merge gate would never let them collide. Fill in only
+            // the missing ones: a lookup per vertex, recomputed on a miss.
+            if mesh_graph.vertex_normals.is_none() {
+                mesh_graph.vertex_normals = Some(SecondaryMap::new());
+            }
+            for &v_id in vertex_to_weight.keys() {
+                if mesh_graph.vertices.contains_key(v_id)
+                    && !mesh_graph
+                        .vertex_normals
+                        .as_ref()
+                        .is_some_and(|normals| normals.contains_key(v_id))
+                {
+                    mesh_graph.compute_vertex_normal(v_id);
+                }
+            }
 
             for (&v_id, &weight) in &vertex_to_weight {
                 let Some(&pos) = mesh_graph.positions.get(v_id) else {

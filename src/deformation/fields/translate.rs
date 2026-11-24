@@ -80,7 +80,10 @@ impl DeformationField for TranslateDeformation {
         strength: f32,
         _intersection: &FaceIntersection,
     ) -> f32 {
-        self.translation.length_squared() * strength
+        // `vertex_movement` scales the translation by `strength`, so its square
+        // scales by `strength²`. Multiplying by `strength` alone under-counted the
+        // steps for `strength > 1` and gave a NaN step count for `strength < 0`.
+        self.translation.length_squared() * strength * strength
     }
 
     #[inline(always)]

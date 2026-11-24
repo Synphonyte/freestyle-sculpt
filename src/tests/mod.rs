@@ -134,3 +134,180 @@ fn from_mesh_graph_handles_mesh_without_halfedges() {
     let params = SculptParams::from_mesh_graph(&mesh_graph, 0.5);
     assert!((params.max_edge_length_squared.sqrt() - 0.5).abs() < 1e-6);
 }
+
+/// A unit cube whose faces are each an `n`x`n` quad grid, so its edges are sharp
+/// 90° creases.
+fn tessellated_cube(n: usize) -> MeshGraph {
+    use glam::Vec3;
+
+    let step = 1.0 / n as f32;
+    // (origin, du, dv) per face, ordered so that du x dv points outward.
+    let faces: [(Vec3, Vec3, Vec3); 6] = [
+        (Vec3::Y, Vec3::X, Vec3::NEG_Y),
+        (Vec3::Z, Vec3::X, Vec3::Y),
+        (Vec3::ZERO, Vec3::X, Vec3::Z),
+        (Vec3::Y, Vec3::Z, Vec3::X),
+        (Vec3::ZERO, Vec3::Z, Vec3::Y),
+        (Vec3::X, Vec3::Y, Vec3::Z),
+    ];
+
+    let mut soup = Vec::new();
+    for (origin, du, dv) in faces {
+        let p = |i: usize, j: usize| origin + du * (i as f32 * step) + dv * (j as f32 * step);
+        for j in 0..n {
+            for i in 0..n {
+                let (a, b, c, d) = (p(i, j), p(i + 1, j), p(i + 1, j + 1), p(i, j + 1));
+                soup.extend([a, b, c, a, c, d]);
+            }
+        }
+    }
+
+    MeshGraph::triangles(&soup).expect("cube must build a mesh graph")
+}
+
+/// Cleanup with topology changes on an untouched mesh must not weld its sharp
+/// creases to themselves. Vertices on either side of a cube edge are close and
+/// have near-orthogonal normals, which used to pass the merge gate: the cube lost
+/// a third of its vertices and gained a handle.
+#[test]
+fn cleanup_does_not_weld_sharp_creases() {
+    use crate::deformation::{TopologyManager, cleanup_mesh};
+
+    for n in [8, 12, 16] {
+        let mut mesh_graph = tessellated_cube(n);
+        mesh_graph.compute_vertex_normals();
+
+        let params = SculptParams::from_mesh_graph(&mesh_graph, 0.0);
+        let mut topology_manager = TopologyManager::new(&mesh_graph, params);
+
+        let vertices_before = mesh_graph.vertices.len();
+        cleanup_mesh(&mut mesh_graph, &params, &mut topology_manager, true);
+
+        let euler = mesh_graph.vertices.len() as i64 - (mesh_graph.halfedges.len() / 2) as i64
+            + mesh_graph.faces.len() as i64;
+        assert_eq!(euler, 2, "n={n}: the cube gained a handle");
+
+        // Every vertex must still lie on the cube's surface.
+        for pos in mesh_graph.positions.values() {
+            let d = (*pos - glam::Vec3::splat(0.5)).abs() - glam::Vec3::splat(0.5);
+            let off_surface = d.max(glam::Vec3::ZERO).length() + d.max_element().min(0.0).abs();
+            assert!(
+                off_surface < 1e-4,
+                "n={n}: vertex {pos} left the cube surface"
+            );
+        }
+        assert_eq!(mesh_graph.vertices.len(), vertices_before, "n={n}");
+    }
+}
+
+/// `max_movement_squared` decides the step count, so it must bound the real
+/// movement `translation * weight * strength` for any strength, including
+/// negative ones (which used to give a NaN step count and no movement).
+#[test]
+fn translate_max_movement_scales_with_strength_squared() {
+    use crate::deformation::{DeformationField, TranslateDeformation};
+    use crate::ray::{FaceIntersection, Ray};
+    use crate::selectors::{DistanceWithFalloff, SMOOTH_FALLOFF};
+    use glam::Vec3;
+    use mesh_graph::primitives::IcoSphere;
+
+    let mesh_graph = MeshGraph::from(IcoSphere {
+        subdivisions: 2,
+        radius: 1.0,
+    });
+    let hit = Ray {
+        origin: Vec3::new(5.0, 0.0, 0.0),
+        direction: Vec3::NEG_X,
+    }
+    .cast_ray_and_get_face_id(&mesh_graph)
+    .unwrap();
+    let intersection = FaceIntersection { toi: 0.0, ..hit };
+
+    let mut translate = TranslateDeformation::new();
+    translate.on_pointer_down(intersection);
+    translate.on_pointer_move(&mesh_graph, Vec3::X * 0.2, Some(intersection));
+
+    let selector = DistanceWithFalloff::sphere(0.3, 0.2, SMOOTH_FALLOFF);
+    for strength in [1.0f32, 4.0, -1.0, -3.0] {
+        let max_movement =
+            translate.max_movement_squared(&mesh_graph, &selector, strength, &intersection);
+        let expected = 0.2 * strength.abs();
+        assert!(
+            (max_movement.sqrt() - expected).abs() < 1e-5,
+            "strength {strength}: got {}, expected {expected}",
+            max_movement.sqrt()
+        );
+    }
+}
+
+/// Without topology changes the protected sets are never drained by a merge pass,
+/// so the cleanup itself must clear them, or they grow across strokes.
+#[test]
+fn cleanup_without_topology_change_clears_protected_sets() {
+    use crate::deformation::{TopologyManager, cleanup_mesh};
+    use mesh_graph::primitives::IcoSphere;
+
+    let mut mesh_graph = MeshGraph::from(IcoSphere {
+        subdivisions: 2,
+        radius: 1.0,
+    });
+    // A much finer target forces subdivisions, which mark their new vertices.
+    let params = SculptParams::from_mesh_graph_with_factor(&mesh_graph, 0.0, 0.5);
+    let mut topology_manager = TopologyManager::new(&mesh_graph, params);
+    topology_manager
+        .protected_halfedges
+        .extend(mesh_graph.halfedges.keys());
+
+    cleanup_mesh(&mut mesh_graph, &params, &mut topology_manager, false);
+
+    assert!(topology_manager.protected_vertices.is_empty());
+    assert!(topology_manager.protected_halfedges.is_empty());
+}
+
+/// `apply` fills in the normals the selection is missing before each step, so a
+/// field that moves along normals moves vertices that have none yet (new ones from
+/// the previous step's cleanup, or every vertex of a mesh without normals).
+#[test]
+fn erode_dilate_moves_vertices_without_normals() {
+    use crate::deformation::{DeformationField, ErodeDilateDeformation, TopologyManager};
+    use crate::ray::Ray;
+    use crate::selectors::{DistanceWithFalloff, SMOOTH_FALLOFF};
+    use glam::Vec3;
+    use mesh_graph::primitives::IcoSphere;
+
+    let mut mesh_graph = MeshGraph::from(IcoSphere {
+        subdivisions: 3,
+        radius: 1.0,
+    });
+    mesh_graph.vertex_normals = None;
+
+    let hit = Ray {
+        origin: Vec3::new(5.0, 0.0, 0.0),
+        direction: Vec3::NEG_X,
+    }
+    .cast_ray_and_get_face_id(&mesh_graph)
+    .unwrap();
+
+    let params = SculptParams::from_mesh_graph(&mesh_graph, 0.0);
+    let mut topology_manager = TopologyManager::new(&mesh_graph, params);
+
+    let mut dilate = ErodeDilateDeformation::new(0.05);
+    dilate.on_pointer_move(&mesh_graph, Vec3::ZERO, Some(hit));
+    dilate.apply(
+        &mut mesh_graph,
+        &DistanceWithFalloff::sphere(0.2, 0.1, SMOOTH_FALLOFF),
+        1.0,
+        params,
+        &mut topology_manager,
+    );
+
+    let max_x = mesh_graph
+        .positions
+        .values()
+        .map(|p| p.x)
+        .fold(f32::MIN, f32::max);
+    assert!(
+        max_x > 1.04,
+        "the brush did not dilate the sphere: max x {max_x}"
+    );
+}

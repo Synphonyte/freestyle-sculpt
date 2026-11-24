@@ -12,6 +12,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Vertex movement along normals ignores non-finite normals instead of turning the
   position into NaN. Hole punching also stops counting a zero offset as progress, and
   the collision merge gate skips zero or non-finite normals like missing ones
+- The collision merge gate requires the two sheets to face each other. Vertices on
+  either side of a sharp convex crease used to pass it, so cleanup with topology
+  changes welded e.g. a plain cube's edges to themselves and added a handle
+- `TranslateDeformation` and `ErodeDilateDeformation` count their steps from
+  `strength²`. Translate under-counted for `strength > 1` (steps larger than
+  `max_move_dist`) and did nothing for a negative strength
+- `DeformationField::apply` computes the missing normals of the selection each step,
+  so vertices created by the previous step's cleanup move with the rest and can be
+  merged
+- `cleanup_mesh` without topology changes clears the protected sets on return, so
+  they no longer grow across strokes
+- Warn when the step count of `apply` or `morphological_open_close` is capped.
+  Documented the step cap, `punch_hole` needing vertex normals (now a
+  `debug_assert!`) and that `TopologyManager` must be recreated when the sculpt
+  params change
+- Fixed the bevy example's build (missing `mask` argument, bevy 0.20, mesh-graph main)
 
 ## [0.12.0] - 2026-09-13
 

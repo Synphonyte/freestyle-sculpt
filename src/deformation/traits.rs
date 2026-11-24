@@ -184,19 +184,20 @@ pub trait DeformationField {
             // The previous step's cleanup creates vertices (subdivision, merges) that
             // have no normal yet. Fields that move along normals would leave them
             // behind, and the merge gate would never let them collide. Fill in only
-            // the missing ones: a lookup per vertex, recomputed on a miss.
-            if mesh_graph.vertex_normals.is_none() {
-                mesh_graph.vertex_normals = Some(SecondaryMap::new());
-            }
-            for &v_id in vertex_to_weight.keys() {
-                if mesh_graph.vertices.contains_key(v_id)
-                    && !mesh_graph
-                        .vertex_normals
-                        .as_ref()
-                        .is_some_and(|normals| normals.contains_key(v_id))
-                {
-                    mesh_graph.compute_vertex_normal(v_id);
-                }
+            // the missing ones: a lookup per selected vertex, and a recompute only for
+            // those without a normal (usually none, so nothing is allocated).
+            let normals = mesh_graph
+                .vertex_normals
+                .get_or_insert_with(SecondaryMap::new);
+            let missing_normals: Vec<VertexId> = vertex_to_weight
+                .keys()
+                .copied()
+                .filter(|&v_id| {
+                    !normals.contains_key(v_id) && mesh_graph.vertices.contains_key(v_id)
+                })
+                .collect();
+            for v_id in missing_normals {
+                mesh_graph.compute_vertex_normal(v_id);
             }
 
             for (&v_id, &weight) in &vertex_to_weight {

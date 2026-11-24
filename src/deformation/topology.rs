@@ -1560,24 +1560,7 @@ impl<'a> PhysicsHooks for TopologyPhysicsHooks<'a> {
                 return false;
             }
 
-            if norm_1.dot(norm_2) > 0.3 {
-                return false;
-            }
-
-            // The two sheets must face each other: each vertex has to lie in front
-            // of the other along its normal. Across a convex crease (a cube edge,
-            // say) the normals are far apart too and the colliders overlap, but each
-            // vertex lies *behind* the other's tangent plane. Merging such a pair
-            // welds the crease to itself and adds a handle.
-            let (Some(&pos_1), Some(&pos_2)) = (
-                self.mesh_graph.positions.get(v_id1),
-                self.mesh_graph.positions.get(v_id2),
-            ) else {
-                return false;
-            };
-            let offset = pos_2 - pos_1;
-
-            norm_1.dot(offset) > 0.0 && norm_2.dot(offset) < 0.0
+            norm_1.dot(norm_2) <= 0.3
         }
     }
 }

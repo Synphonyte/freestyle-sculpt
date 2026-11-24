@@ -568,7 +568,7 @@ mod tests {
     /// and checked for boundary halfedges and manifoldness. All 36 cells are watertight and
     /// manifold.
     ///
-    /// `#[ignore]`d for its runtime (~16 s), not for a failure: run it with `-- --ignored` when
+    /// `#[ignore]`d for its runtime (~7 s), not for a failure: run it with `-- --ignored` when
     /// the merge or the closers change. The two focused tests above cover the two cells this
     /// grid used to fail on.
     #[test]
@@ -778,45 +778,79 @@ mod tests {
         assert!(failures.is_empty(), "small-gap welds failed: {failures:?}");
     }
 
-    /// The same small gaps under merge orders the soaks cannot reach.
+    /// The merge orders the soaks cannot reach: a seeded sweep plus the reversed
+    /// shipping order.
     ///
-    /// `weld_order_seed` reads `WELD_ORDER_SEED` once per process, and the soaks run
-    /// the shipping order, so a sweep needs to force the order per weld. That is what
-    /// [`with_weld_order_seed`] is for. A non-shipping order has opened gaps the
-    /// shipping one did not (`WELD_ORDER_SEED=19` at n=8, gap=1.25, a collapse-phase
-    /// defect kept reproducible in [`diag_merge_order_opens_gap_125`]), and merge
-    /// order also decides which rim a coincident fusion meets, which is what the
-    /// gap-0.05 and gap-0.1 repros are about.
+    /// `weld_order_seed` and `weld_order_reversed` read their env vars once per
+    /// process, so the soaks run the shipping order and a sweep has to force the
+    /// order per weld. [`with_weld_order`] is that knob: one guard sets both (they
+    /// are applied in one expression: reverse first, then shuffle).
     ///
-    /// `WELD_SWEEP_SEEDS` sets how many orders to run (default 8: shipping plus
-    /// seeds 1..=7). At the default range that is 96 welds, about 10 s.
+    /// A non-shipping order has opened gaps the shipping one did not
+    /// (`WELD_ORDER_SEED=19` at n=8, gap=1.25 - a collapse-phase defect pinned by
+    /// [`weld_seed_19_gap_1_25_stays_watertight`]), and merge order also
+    /// decides which rim a coincident fusion meets, which is what the gap-0.05 and
+    /// gap-0.1 repros are about. The reversed order is swept as well: it was the
+    /// weld hunt's sensitive instrument - it kept finding fresh cases while the
+    /// shipping order was clean - and no other test runs it.
+    ///
+    /// `WELD_SWEEP_SEEDS` sets how many seeded orders to sweep (default 8: the
+    /// shipping order plus seeds 1..=7); the reversed order is added on top.
+    ///
+    /// The default gaps are the repro end of the range, the two contact cells that
+    /// used to end in a wire edge ([`weld_gap_0_3_leaves_no_wire`],
+    /// [`weld_gap_1_5_leaves_no_wire`]), the order-sensitive cell
+    /// [`weld_seed_19_gap_1_25_stays_watertight`] and one mid-range cell: 0.05, 0.1,
+    /// 0.3,
+    /// 0.75, 1.25, 1.5. `WELD_SWEEP_FULL=1` widens that to the whole measured range,
+    /// 0.05..=2.25 in twelve steps. Measured on this Mac (release): default 9 orders
+    /// x 6 gaps x 3 n = 162 welds in ~21 s; `WELD_SWEEP_FULL=1` 9 x 12 x 3 = 324
+    /// welds in ~67 s. The top of the range is what makes it slow (a gap-2.25 weld
+    /// alone takes ~0.8 s against ~0.1 s at the bottom), which is why it stays
+    /// behind the switch.
     #[test]
     #[ignore = "slow"]
     fn weld_order_sweep_stays_watertight() {
-        use crate::deformation::topology::with_weld_order_seed;
+        use crate::deformation::topology::{WeldOrder, with_weld_order};
 
         let seeds: u64 = std::env::var("WELD_SWEEP_SEEDS")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(8);
+        let full = std::env::var("WELD_SWEEP_FULL").is_ok_and(|value| value != "0");
+
+        const DEFAULT_GAPS: [f32; 6] = [0.05, 0.1, 0.3, 0.75, 1.25, 1.5];
+        const FULL_GAPS: [f32; 12] = [
+            0.05f32, 0.1, 0.15, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25,
+        ];
+        let gaps: &[f32] = if full { &FULL_GAPS } else { &DEFAULT_GAPS };
+
+        // Seed 0 is the shipping order, 1..shuffle it; the reversed order is swept
+        // after all of them because nothing else reaches it.
+        let orders: Vec<WeldOrder> = (0..seeds)
+            .map(|seed| WeldOrder {
+                seed: (seed > 0).then_some(seed),
+                ..WeldOrder::SHIPPING
+            })
+            .chain([WeldOrder::REVERSED])
+            .collect();
+
         let previous_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(|_| {}));
 
         let mut failures = Vec::new();
-        for seed in 0..seeds {
-            // Seed 0 is the shipping order.
-            let order = (seed > 0).then_some(seed);
-            for gap in [0.05f32, 0.1, 0.25, 1.25] {
+        for order in orders {
+            let order_label = order_label(order);
+            for gap in gaps {
                 for n in 8usize..=10 {
-                    let (mesh_graph, boundary) =
-                        with_weld_order_seed(order, || weld_and_count(n, gap));
+                    let (mesh_graph, boundary) = with_weld_order(order, || weld_and_count(n, *gap));
                     let manifold = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         assert_manifold(&mesh_graph, "order sweep")
                     }))
                     .is_ok();
 
                     eprintln!(
-                        "ORDER {order:?} n={n} gap={gap}: {} faces | boundary {boundary} ({}) | \
+                        "ORDER {order_label} n={n} gap={gap}: {} faces | boundary {boundary} ({}) | \
                          manifold {manifold}",
                         mesh_graph.faces.len(),
                         describe_boundary(&mesh_graph)
@@ -824,7 +858,7 @@ mod tests {
 
                     if boundary != 0 || !manifold {
                         failures.push(format!(
-                            "{order:?} n={n} gap={gap}: {boundary} boundary, manifold {manifold}"
+                            "{order_label} n={n} gap={gap}: {boundary} boundary, manifold {manifold}"
                         ));
                     }
                 }
@@ -833,6 +867,16 @@ mod tests {
 
         std::panic::set_hook(previous_hook);
         assert!(failures.is_empty(), "order sweep failed: {failures:?}");
+    }
+
+    /// How one swept merge order reads in the sweep's output.
+    fn order_label(order: crate::deformation::topology::WeldOrder) -> String {
+        match (order.reversed, order.seed) {
+            (false, None) => "shipping".to_owned(),
+            (false, Some(seed)) => format!("seed {seed}"),
+            (true, None) => "reversed".to_owned(),
+            (true, Some(seed)) => format!("reversed+seed {seed}"),
+        }
     }
 
     /// How the boundary of a welded mesh breaks down: the halves whose twin carries a
@@ -1002,47 +1046,33 @@ mod tests {
     /// `collapse_until_edges_above_min_length` changing the boundary edge set of
     /// a *closed* region (3 added), with three `flap removal` re-pairing events
     /// in the op trace directly before - the same flap-removal family as
-    /// [`diag_contact_gap_leaves_a_hole`], reached via the merge order instead
+    /// [`weld_gap_1_5_leaves_no_wire`], reached via the merge order instead
     /// of the gap size.
     ///
-    /// It closes now (0 boundary, 1368 faces), and
-    /// [`weld_order_sweep_stays_watertight`] runs this gap under every seed it
-    /// sweeps, so this stays only as the single-cell repro.
+    /// It closes now (0 boundary). [`weld_order_sweep_stays_watertight`] covers this
+    /// gap under every order it sweeps; this pins the seed that found it, which the
+    /// sweep's default order range does not reach.
     #[test]
-    #[ignore]
-    fn diag_merge_order_opens_gap_125() {
-        let mut mesh_graph = two_gapped_cubes_with(8, 1.25);
-        apply_weld_amount(&mut mesh_graph, 0.0);
-        apply_weld_amount(&mut mesh_graph, 0.625);
-        eprintln!(
-            "order-sensitive contact case (n=8, gap=1.25): {} faces, {} boundary halfedges",
-            mesh_graph.faces.len(),
-            boundary_halfedge_count(&mesh_graph)
-        );
-    }
+    fn weld_seed_19_gap_1_25_stays_watertight() {
+        use crate::deformation::topology::{WeldOrder, with_weld_order};
 
-    /// The small-gap contact case that still opens the weld.
-    ///
-    /// Down to 3 boundary halfedges (a triangle hole) from 17. Found by
-    /// [`weld_soak_second_fixture`]'s parameter sweep and originally attributed with
-    /// `MESH_GRAPH_HOLE_CHECK=1` to the collapse phase - that part is fixed (see the
-    /// `weld_collapse_cases` module in mesh-graph). With `WELD_CAPTURE=1` the *merge*
-    /// capture is what fires now: a merge opens six boundary halfedges and no later
-    /// merge's region covers the triangle left behind.
-    ///
-    /// Kept as a print, not an assertion, so the case stays reproducible without
-    /// turning the suite red.
-    #[test]
-    #[ignore]
-    fn diag_contact_gap_leaves_a_hole() {
-        let mut mesh_graph = two_gapped_cubes_with(9, 0.1);
-        apply_weld_amount(&mut mesh_graph, 0.0);
-        apply_weld_amount(&mut mesh_graph, 0.05);
-        eprintln!(
-            "contact case (n=9, gap=0.1): {} faces, {} boundary halfedges",
-            mesh_graph.faces.len(),
-            boundary_halfedge_count(&mesh_graph)
+        let (mesh_graph, boundary) = with_weld_order(
+            WeldOrder {
+                seed: Some(19),
+                reversed: false,
+            },
+            || weld_and_count(8, 1.25),
         );
+        let label = "order-sensitive contact weld (n=8, gap=1.25, seed 19)";
+
+        assert_eq!(wire_halves(&mesh_graph), 0, "{label}: wire halves left");
+        assert_eq!(
+            boundary,
+            0,
+            "{label}: the weld left {boundary} boundary halfedges ({})",
+            describe_boundary(&mesh_graph)
+        );
+        assert_manifold(&mesh_graph, label);
     }
 
     /// The weld, repeated, under the strictest watertightness assertion we have -

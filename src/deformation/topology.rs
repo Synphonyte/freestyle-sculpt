@@ -184,25 +184,67 @@ thread_local! {
     /// var is read once per process, so a sweep needs this to vary it in one run.
     static SEED_OVERRIDE: std::cell::Cell<Option<Option<u64>>> =
         const { std::cell::Cell::new(None) };
+    /// A test's forced `WELD_ORDER=reversed`; [`weld_order_reversed`] latches its
+    /// env var in a `OnceLock` for the same reason.
+    static REVERSED_OVERRIDE: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
 }
 
-/// Runs `f` in the merge order `seed` names (`None` = shipping order) and restores
-/// the previous order afterwards, panics included.
+/// One merge order of the sweep: whether the id-sorted candidate pairs are reversed
+/// first, and the seed the result is shuffled with afterwards (`None` = shipping
+/// order).
 #[cfg(test)]
-pub(crate) fn with_weld_order_seed<R>(seed: Option<u64>, f: impl FnOnce() -> R) -> R {
-    struct Restore(Option<Option<u64>>);
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct WeldOrder {
+    pub seed: Option<u64>,
+    pub reversed: bool,
+}
+
+#[cfg(test)]
+impl WeldOrder {
+    /// The order the topology manager uses when nothing overrides it.
+    pub(crate) const SHIPPING: Self = Self {
+        seed: None,
+        reversed: false,
+    };
+
+    /// The reversed shipping order, i.e. `WELD_ORDER=reversed`.
+    pub(crate) const REVERSED: Self = Self {
+        seed: None,
+        reversed: true,
+    };
+}
+
+/// Runs `f` in `order` and restores the previous order afterwards, panics included.
+///
+/// One guard for both knobs: `update_collisions_and_merge` reads them in one
+/// expression (reverse, then shuffle), so an order is only complete when both are
+/// set.
+#[cfg(test)]
+pub(crate) fn with_weld_order<R>(order: WeldOrder, f: impl FnOnce() -> R) -> R {
+    struct Restore(Option<Option<u64>>, Option<bool>);
+
     impl Drop for Restore {
         fn drop(&mut self) {
             SEED_OVERRIDE.with(|cell| cell.set(self.0));
+            REVERSED_OVERRIDE.with(|cell| cell.set(self.1));
         }
     }
 
-    let _restore = Restore(SEED_OVERRIDE.with(|cell| cell.replace(Some(seed))));
+    let _restore = Restore(
+        SEED_OVERRIDE.with(|cell| cell.replace(Some(order.seed))),
+        REVERSED_OVERRIDE.with(|cell| cell.replace(Some(order.reversed))),
+    );
+
     f()
 }
 
 /// `WELD_ORDER=reversed` reproduces the reversed merge order.
 fn weld_order_reversed() -> bool {
+    #[cfg(test)]
+    if let Some(reversed) = REVERSED_OVERRIDE.with(std::cell::Cell::get) {
+        return reversed;
+    }
+
     use std::sync::OnceLock;
 
     static REVERSED: OnceLock<bool> = OnceLock::new();
@@ -1150,6 +1192,9 @@ impl TopologyManager {
         //   of the shipping order, so other orders can be swept and replayed;
         // - `WELD_ORDER=reversed` reverses the shipping order, reproducing the
         //   sensitive instrument the weld hunt used to keep in a source edit.
+        //
+        // Tests force both through `with_weld_order`, since each env var is
+        // latched once per process.
         let mut candidates: Vec<(ColliderHandle, ColliderHandle)> = self
             .narrow_phase
             .intersection_pairs()

@@ -197,6 +197,41 @@ fn combine(collapse: EdgeLengthCleanup, subdivide: EdgeLengthCleanup) -> EdgeLen
 mod tests {
     use super::*;
 
+    /// The contract both call sites rely on: a listed vertex without a normal gets
+    /// one, a listed vertex with a normal keeps it, and without normals nothing
+    /// happens.
+    #[test]
+    fn fill_missing_normals_fills_only_the_missing_ones() {
+        use mesh_graph::primitives::IcoSphere;
+
+        let mut mesh_graph = MeshGraph::from(IcoSphere {
+            subdivisions: 1,
+            radius: 1.0,
+        });
+        let ids: Vec<_> = mesh_graph.vertices.keys().take(2).collect();
+        let (missing, present) = (ids[0], ids[1]);
+
+        // Without normals it is a no-op.
+        mesh_graph.vertex_normals = None;
+        fill_missing_normals(&mut mesh_graph, [missing, present]);
+        assert!(mesh_graph.vertex_normals.is_none());
+
+        mesh_graph.compute_vertex_normals();
+        let expected = mesh_graph.vertex_normals.as_ref().unwrap()[missing];
+        let normals = mesh_graph.vertex_normals.as_mut().unwrap();
+        normals.remove(missing);
+        // A deliberately wrong normal, to see that it is not recomputed.
+        let sentinel = Vec3::new(0.0, 0.0, -1.0);
+        normals.insert(present, sentinel);
+
+        fill_missing_normals(&mut mesh_graph, [missing, present]);
+
+        let normals = mesh_graph.vertex_normals.as_ref().unwrap();
+        assert!((normals[missing] - expected).length() < 1e-5);
+        assert_eq!(normals[present], sentinel);
+        assert!(normals_cover_mesh(&mesh_graph));
+    }
+
     #[test]
     fn normal_offset_ignores_a_non_finite_normal() {
         assert_eq!(normal_offset(Vec3::NAN, 1.0), Vec3::ZERO);

@@ -64,7 +64,13 @@ impl TopologyManager {
     }
 }
 
-/// The weld-path collapse, wrapped in the collapse-phase capture: under
+/// The crate's collapse: every edge collapse in the crate goes through here, not
+/// through mesh-graph's `collapse_until_edges_above_min_length` directly, because
+/// this also gives the vertices the collapse's manifold repair adds a normal (see
+/// [`super::fill_missing_normals`]). Skipping it can leave the normals map
+/// incomplete and stall the subdivision that follows.
+///
+/// It is also wrapped in the collapse-phase capture: under
 /// `WELD_CAPTURE=1` the pre-op mesh is cloned, and if the collapse opens a
 /// previously-closed region (boundary gained with none before) or leaves a
 /// wire edge (both halves faceless), the neighborhood of the newly-added

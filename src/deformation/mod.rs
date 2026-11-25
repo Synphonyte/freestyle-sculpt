@@ -227,7 +227,17 @@ mod tests {
         fill_missing_normals(&mut mesh_graph, [missing, present]);
 
         let normals = mesh_graph.vertex_normals.as_ref().unwrap();
-        assert!((normals[missing] - expected).length() < 1e-5);
+        // The helper averages unit face normals while `compute_vertex_normals` weights
+        // them by area, so compare directions loosely rather than exactly.
+        let filled = normals[missing];
+        assert!(
+            (filled.length() - 1.0).abs() < 1e-5,
+            "not a unit normal: {filled}"
+        );
+        assert!(
+            filled.dot(expected) > 3f32.to_radians().cos(),
+            "filled normal {filled} is not close to {expected}"
+        );
         assert_eq!(normals[present], sentinel);
         assert!(normals_cover_mesh(&mesh_graph));
     }

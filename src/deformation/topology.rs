@@ -64,7 +64,7 @@ impl TopologyManager {
     }
 }
 
-/// The crate's collapse: every edge collapse in the crate goes through here, not
+/// The crate's collapse: every edge collapse on the live mesh goes through here, not
 /// through mesh-graph's `collapse_until_edges_above_min_length` directly, because
 /// this also gives the vertices the collapse's manifold repair adds a normal (see
 /// [`super::fill_missing_normals`]). Skipping it can leave the normals map

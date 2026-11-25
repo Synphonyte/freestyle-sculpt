@@ -421,25 +421,29 @@ fn subdividing_strokes_leave_no_dangling_vertices() {
 
 /// The step count `apply` derives from `max_movement_squared` must keep every
 /// step within `max_move_dist`, or collisions between steps can be missed. With
-/// `strength > 1` the old `len² * strength` bound took half the steps needed.
+/// `strength > 1` the old `len² * strength` bound took steps of twice that.
 #[test]
 fn apply_steps_stay_within_max_move_dist() {
     use crate::deformation::{DeformationField, TopologyManager, TranslateDeformation};
     use crate::ray::{FaceIntersection, Ray};
     use crate::selectors::{DistanceWithFalloff, MeshSelector, SMOOTH_FALLOFF, WeightedSelection};
     use glam::Vec3;
-    use mesh_graph::primitives::IcoSphere;
-    use std::cell::Cell;
+    use mesh_graph::{VertexId, primitives::IcoSphere};
+    use std::cell::RefCell;
 
-    /// Counts the selects `apply` makes.
-    struct Counting {
+    /// Snapshots the positions whenever `apply` selects. `apply` selects before every
+    /// step, so the vertices move by one step at most between two snapshots, however
+    /// many other selects it makes.
+    struct Recording {
         inner: DistanceWithFalloff,
-        calls: Cell<usize>,
+        snapshots: RefCell<Vec<Vec<(VertexId, Vec3)>>>,
     }
 
-    impl MeshSelector for Counting {
+    impl MeshSelector for Recording {
         fn select(&self, mesh_graph: &MeshGraph, hit: &FaceIntersection) -> WeightedSelection {
-            self.calls.set(self.calls.get() + 1);
+            self.snapshots
+                .borrow_mut()
+                .push(mesh_graph.positions.iter().map(|(v, p)| (v, *p)).collect());
             self.inner.select(mesh_graph, hit)
         }
     }
@@ -449,8 +453,17 @@ fn apply_steps_stay_within_max_move_dist() {
         radius: 1.0,
     });
     mesh_graph.compute_vertex_normals();
-    let params = SculptParams::from_mesh_graph(&mesh_graph, 0.0);
-    let max_move_dist = params.max_move_dist_squared.sqrt();
+
+    // Params with an edge-length band so wide, and colliders so small, that the
+    // cleanup between steps never moves a vertex: every displacement is a step.
+    let max_move_dist: f32 = 0.08;
+    let params = SculptParams {
+        max_move_dist_squared: max_move_dist * max_move_dist,
+        min_edge_length_squared: 0.0,
+        max_edge_length_squared: 100.0,
+        max_thickness_half: 1e-6,
+        max_thickness_squared: 4e-12,
+    };
 
     let hit = Ray {
         origin: Vec3::new(5.0, 0.0, 0.0),
@@ -463,11 +476,13 @@ fn apply_steps_stay_within_max_move_dist() {
     translate.on_pointer_down(hit);
     translate.on_pointer_move(&mesh_graph, Vec3::X * 0.1, Some(hit));
 
-    let selector = Counting {
+    let selector = Recording {
         inner: DistanceWithFalloff::sphere(1.0, 0.5, SMOOTH_FALLOFF),
-        calls: Cell::new(0),
+        snapshots: RefCell::default(),
     };
+    let before: Vec<Vec3> = mesh_graph.positions.values().copied().collect();
     let mut topology_manager = TopologyManager::new(&mesh_graph, params);
+    // The total movement is 0.1 * 4 = 0.4, five times max_move_dist.
     translate.apply(
         &mut mesh_graph,
         &selector,
@@ -476,19 +491,27 @@ fn apply_steps_stay_within_max_move_dist() {
         &mut topology_manager,
     );
 
-    // Translate sizes its steps without selecting, so `apply` selects once per step
-    // and once more to pick the vertices whose normals are recomputed.
-    let steps = selector.calls.get() - 1;
+    let snapshots = selector.snapshots.into_inner();
+    for pair in snapshots.windows(2) {
+        let earlier: crate::hash::HashMap<_, _> = pair[0].iter().copied().collect();
+        let step = pair[1]
+            .iter()
+            .filter_map(|(v, p)| earlier.get(v).map(|q| p.distance(*q)))
+            .fold(0.0f32, f32::max);
+        assert!(
+            step <= max_move_dist * 1.0001,
+            "a step moved a vertex by {step}, more than max_move_dist {max_move_dist}"
+        );
+    }
 
-    // The selection's centre has weight 1, so the largest movement is the whole
-    // translation times the strength, and no step may move more than max_move_dist.
-    let largest_movement = 0.1 * 4.0;
-    let needed = (largest_movement / max_move_dist).ceil() as usize;
-    assert!(
-        steps >= needed,
-        "apply took {steps} steps for a movement of {largest_movement}; each step moves \
-         more than max_move_dist {max_move_dist} unless it takes at least {needed}"
-    );
+    // And the steps add up to the whole movement.
+    let moved = mesh_graph
+        .positions
+        .values()
+        .zip(&before)
+        .map(|(p, q)| p.distance(*q))
+        .fold(0.0f32, f32::max);
+    assert!((moved - 0.4).abs() < 1e-4, "moved {moved}, expected 0.4");
 }
 
 /// `ErodeDilateDeformation` moves `normal * amount * weight * strength`, so its

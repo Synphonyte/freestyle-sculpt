@@ -18,15 +18,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `DeformationField::apply` computes the vertex normals up front when the mesh has
   none, and no longer leaves a map that covers only the selection. Subdivision stalls
   on a vertex without a normal and left the vertex it had just added without faces;
-  with a partial map that happened on the first subdividing stroke. `Some` normals
-  must now cover the whole mesh (`debug_assert!`), which `punch_hole` also checks
+  with a partial map that happened on the first subdividing stroke. The vertices
+  that collapse and merge add get their normals right away, so the map stays
+  complete. `Some` normals must now cover the whole mesh (`debug_assert!`), which
+  `punch_hole` also checks
 - `cleanup_mesh` without topology changes, and on hitting its iteration cap, clears
   the protected sets on return, so they no longer grow across strokes
 - Warn when the step count of `apply` or `morphological_open_close` is capped.
   Documented the step cap, `punch_hole` needing vertex normals (now a
   `debug_assert!`) and that `TopologyManager` must be recreated when the sculpt
   params change
-- Fixed the bevy example's build (missing `mask` argument, bevy 0.20, mesh-graph main)
+- Fixed the examples' build (missing `mask` argument, bevy 0.20, mesh-graph main,
+  and no more sibling `../mesh-graph` checkout needed for the log viewer)
 
 ## [0.12.0] - 2026-09-13
 

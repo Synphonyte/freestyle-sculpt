@@ -120,8 +120,9 @@ pub trait DeformationField {
 
         // `Some` normals must cover the whole mesh: subdivision interpolates the new
         // vertex's normal from the edge's endpoints and stalls (leaving the vertex it
-        // just added without faces) when one is missing. Only subdivision adds
-        // vertices, and it fills their normals in, so a complete map stays complete.
+        // just added without faces) when one is missing. Subdivision fills in the
+        // normals of the vertices it adds; for the ones collapse and merge add, the
+        // cleanup calls `fill_missing_normals`, so a complete map stays complete.
         if mesh_graph.vertex_normals.is_none() {
             mesh_graph.compute_vertex_normals();
         }
@@ -160,7 +161,8 @@ pub trait DeformationField {
             &topology_manager.protected_vertices,
             &topology_manager.protected_halfedges,
         );
-        mesh_graph.collapse_until_edges_above_min_length(
+        crate::deformation::collapse_until_edges_above_min_length_with_weld_capture(
+            mesh_graph,
             params.min_edge_length_squared,
             &mut topology_manager.protected_vertices,
         );

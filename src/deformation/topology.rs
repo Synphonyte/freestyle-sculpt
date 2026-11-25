@@ -75,10 +75,24 @@ pub(crate) fn collapse_until_edges_above_min_length_with_weld_capture(
     min_len_sqr: f32,
     marked_vertices: &mut HashSet<VertexId>,
 ) -> mesh_graph::EdgeLengthCleanup {
-    if !weld_capture_enabled() {
-        return mesh_graph.collapse_until_edges_above_min_length(min_len_sqr, marked_vertices);
-    }
+    let outcome = if weld_capture_enabled() {
+        collapse_with_weld_capture(mesh_graph, min_len_sqr, marked_vertices)
+    } else {
+        mesh_graph.collapse_until_edges_above_min_length(min_len_sqr, marked_vertices)
+    };
 
+    // The collapse's manifold repair can add vertices, without normals. They are
+    // marked, so fill those in before a subdivision trips over them.
+    super::fill_missing_normals(mesh_graph, marked_vertices.iter().copied());
+
+    outcome
+}
+
+fn collapse_with_weld_capture(
+    mesh_graph: &mut MeshGraph,
+    min_len_sqr: f32,
+    marked_vertices: &mut HashSet<VertexId>,
+) -> mesh_graph::EdgeLengthCleanup {
     // Every weld call site passes `protected_vertices` as the marked set, so the
     // snapshot doubles as the replay's protected set.
     let protected = marked_vertices.clone();
@@ -1460,6 +1474,10 @@ impl TopologyManager {
                     self.protected_vertices.insert(v_id2);
                     continue;
                 }
+
+                // The merge (its centre fan and manifold repair) can add vertices,
+                // without normals; keep the normals map complete.
+                super::fill_missing_normals(mesh_graph, merged.added_vertices.iter().copied());
 
                 return Some(merged);
             }

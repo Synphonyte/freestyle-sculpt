@@ -33,6 +33,28 @@ pub(crate) fn normal_offset(normal: Vec3, amount: f32) -> Vec3 {
     }
 }
 
+/// Computes the normals of those `vertex_ids` that have none, if the mesh has normals.
+///
+/// mesh-graph's ops add vertices without normals (except subdivision, which
+/// interpolates them), while subdivision stalls on an edge whose endpoint has none.
+/// The crate calls this with the vertices an op reports as added, so a complete
+/// normals map stays complete; each id is a lookup unless its normal is missing.
+pub(crate) fn fill_missing_normals(
+    mesh_graph: &mut MeshGraph,
+    vertex_ids: impl IntoIterator<Item = mesh_graph::VertexId>,
+) {
+    let Some(normals) = mesh_graph.vertex_normals.as_ref() else {
+        return;
+    };
+    let missing: Vec<_> = vertex_ids
+        .into_iter()
+        .filter(|&v_id| !normals.contains_key(v_id) && mesh_graph.vertices.contains_key(v_id))
+        .collect();
+    for v_id in missing {
+        mesh_graph.compute_vertex_normal(v_id);
+    }
+}
+
 /// Whether every vertex with a face has a vertex normal (`false` without normals).
 ///
 /// Linear in the mesh size; meant for `debug_assert!`s of the "normals are complete"

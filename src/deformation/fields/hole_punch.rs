@@ -65,7 +65,8 @@ pub fn punch_hole(
         &topology_manager.protected_vertices,
         &topology_manager.protected_halfedges,
     );
-    mesh_graph.collapse_until_edges_above_min_length(
+    crate::deformation::collapse_until_edges_above_min_length_with_weld_capture(
+        mesh_graph,
         params.min_edge_length_squared,
         &mut topology_manager.protected_vertices,
     );

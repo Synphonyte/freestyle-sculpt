@@ -33,6 +33,20 @@ pub(crate) fn normal_offset(normal: Vec3, amount: f32) -> Vec3 {
     }
 }
 
+/// Whether every vertex with a face has a vertex normal (`false` without normals).
+///
+/// Linear in the mesh size; meant for `debug_assert!`s of the "normals are complete"
+/// precondition.
+pub(crate) fn normals_cover_mesh(mesh_graph: &MeshGraph) -> bool {
+    let Some(normals) = mesh_graph.vertex_normals.as_ref() else {
+        return false;
+    };
+    mesh_graph
+        .vertices
+        .iter()
+        .all(|(v_id, v)| normals.contains_key(v_id) || v.faces(mesh_graph).next().is_none())
+}
+
 /// Brings the mesh back inside the edge-length band, merging colliding sheets on the
 /// way when `allow_topology_change` is set.
 ///
@@ -140,6 +154,10 @@ pub fn cleanup_mesh(
     }
 
     tracing::error!("cleanup_mesh did not converge after {MAX_CLEANUP_ITERATIONS} iterations");
+
+    // Same as the returns above: the marked sets are this call's bookkeeping.
+    topology_manager.protected_vertices.clear();
+    topology_manager.protected_halfedges.clear();
 
     EdgeLengthCleanup::Stalled
 }

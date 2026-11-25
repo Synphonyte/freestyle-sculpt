@@ -15,11 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TranslateDeformation` and `ErodeDilateDeformation` count their steps from
   `strength²`. Translate under-counted for `strength > 1` (steps larger than
   `max_move_dist`) and did nothing for a negative strength
-- `DeformationField::apply` computes the missing normals of the selection each step,
-  so vertices created by the previous step's cleanup move with the rest and can be
-  merged
-- `cleanup_mesh` without topology changes clears the protected sets on return, so
-  they no longer grow across strokes
+- `DeformationField::apply` computes the vertex normals up front when the mesh has
+  none, and no longer leaves a map that covers only the selection. Subdivision stalls
+  on a vertex without a normal and left the vertex it had just added without faces;
+  with a partial map that happened on the first subdividing stroke. `Some` normals
+  must now cover the whole mesh (`debug_assert!`), which `punch_hole` also checks
+- `cleanup_mesh` without topology changes, and on hitting its iteration cap, clears
+  the protected sets on return, so they no longer grow across strokes
 - Warn when the step count of `apply` or `morphological_open_close` is capped.
   Documented the step cap, `punch_hole` needing vertex normals (now a
   `debug_assert!`) and that `TopologyManager` must be recreated when the sculpt

@@ -3,7 +3,6 @@ use glam::Vec3;
 use itertools::Itertools;
 use mesh_graph::{MeshGraph, VertexId};
 use parry3d::query::PointQueryWithLocation;
-use slotmap::SecondaryMap;
 use tracing::{error, instrument, warn};
 
 #[cfg(feature = "instrumentation")]
@@ -92,7 +91,9 @@ pub trait DeformationField {
     ///
     /// This method should be called after `on_pointer_move` returns `true`.
     ///
-    /// `strength` must be finite. The movement is split into steps of at most
+    /// `strength` must be finite. If the mesh has vertex normals they must cover every
+    /// vertex (as [`MeshGraph::compute_vertex_normals`] leaves them); `None` is fine
+    /// and computes them. The movement is split into steps of at most
     /// `params.max_move_dist_squared.sqrt()` so that collisions are not skipped, but
     /// the step count is capped at 100: a larger movement per call takes bigger steps
     /// and can let sheets pass through each other, so split it across calls instead.
@@ -115,6 +116,19 @@ pub trait DeformationField {
         debug_assert!(
             strength.is_finite(),
             "strength must be finite, got {strength}"
+        );
+
+        // `Some` normals must cover the whole mesh: subdivision interpolates the new
+        // vertex's normal from the edge's endpoints and stalls (leaving the vertex it
+        // just added without faces) when one is missing. Only subdivision adds
+        // vertices, and it fills their normals in, so a complete map stays complete.
+        if mesh_graph.vertex_normals.is_none() {
+            mesh_graph.compute_vertex_normals();
+        }
+        debug_assert!(
+            super::normals_cover_mesh(mesh_graph),
+            "`vertex_normals` is `Some` but misses vertices; recompute it with \
+             `compute_vertex_normals` or set it to `None`"
         );
 
         let max_movement_squared =
@@ -181,25 +195,6 @@ pub trait DeformationField {
 
             vertex_to_weight = selector.select(mesh_graph, intersection).vertex_to_weight;
 
-            // The previous step's cleanup creates vertices (subdivision, merges) that
-            // have no normal yet. Fields that move along normals would leave them
-            // behind, and the merge gate would never let them collide. Fill in only
-            // the missing ones: a lookup per selected vertex, and a recompute only for
-            // those without a normal (usually none, so nothing is allocated).
-            let normals = mesh_graph
-                .vertex_normals
-                .get_or_insert_with(SecondaryMap::new);
-            let missing_normals: Vec<VertexId> = vertex_to_weight
-                .keys()
-                .copied()
-                .filter(|&v_id| {
-                    !normals.contains_key(v_id) && mesh_graph.vertices.contains_key(v_id)
-                })
-                .collect();
-            for v_id in missing_normals {
-                mesh_graph.compute_vertex_normal(v_id);
-            }
-
             for (&v_id, &weight) in &vertex_to_weight {
                 let Some(&pos) = mesh_graph.positions.get(v_id) else {
                     error!("Vertex position not found");
@@ -232,10 +227,6 @@ pub trait DeformationField {
         };
 
         vertex_to_weight = selector.select(mesh_graph, intersection).vertex_to_weight;
-
-        if mesh_graph.vertex_normals.is_none() {
-            mesh_graph.vertex_normals = Some(SecondaryMap::new());
-        }
 
         let mut invalid_vertex_ids = vec![];
 

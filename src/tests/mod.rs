@@ -199,9 +199,9 @@ fn cleanup_without_topology_change_clears_protected_sets() {
     assert!(topology_manager.protected_halfedges.is_empty());
 }
 
-/// `apply` fills in the normals the selection is missing before each step, so a
-/// field that moves along normals moves vertices that have none yet (new ones from
-/// the previous step's cleanup, or every vertex of a mesh without normals).
+/// `apply` computes the normals of a mesh that has none, so a field that moves
+/// along normals moves it; the vertices the cleanup adds get theirs from
+/// subdivision.
 #[test]
 fn erode_dilate_moves_vertices_without_normals() {
     use crate::deformation::{DeformationField, ErodeDilateDeformation, TopologyManager};
@@ -355,4 +355,170 @@ fn eroding_an_hourglass_splits_its_neck() {
     );
     assert_eq!(boundary, 0, "the cut left a hole");
     assert_eq!(euler, 4, "expected two closed spheres");
+}
+
+/// Strokes that subdivide must leave no vertex without faces, starting from a mesh
+/// without normals. Subdivision interpolates a new vertex's normal from its edge's
+/// endpoints and stalls when one is missing, after it has added the vertex, so a
+/// normals map that only covers part of the mesh left dangling vertices.
+#[test]
+fn subdividing_strokes_leave_no_dangling_vertices() {
+    use crate::deformation::{DeformationField, ErodeDilateDeformation, TopologyManager};
+    use crate::ray::Ray;
+    use crate::selectors::{DistanceWithFalloff, SMOOTH_FALLOFF};
+    use glam::Vec3;
+    use mesh_graph::primitives::IcoSphere;
+
+    let mut mesh_graph = MeshGraph::from(IcoSphere {
+        subdivisions: 2,
+        radius: 1.0,
+    });
+    mesh_graph.vertex_normals = None;
+
+    // Half the resolution-neutral edge length, so every cleanup subdivides.
+    let params = SculptParams::from_mesh_graph_with_factor(&mesh_graph, 0.0, 0.5);
+    let mut topology_manager = TopologyManager::new(&mesh_graph, params);
+    let selector = DistanceWithFalloff::sphere(0.3, 0.2, SMOOTH_FALLOFF);
+    let vertices_before = mesh_graph.vertices.len();
+
+    for stroke in 0..2 {
+        let hit = Ray {
+            origin: Vec3::new(5.0, 0.0, 0.0),
+            direction: Vec3::NEG_X,
+        }
+        .cast_ray_and_get_face_id(&mesh_graph)
+        .unwrap();
+
+        let mut erode = ErodeDilateDeformation::new(-0.05);
+        erode.on_pointer_move(&mesh_graph, Vec3::ZERO, Some(hit));
+        erode.apply(
+            &mut mesh_graph,
+            &selector,
+            1.0,
+            params,
+            &mut topology_manager,
+        );
+
+        let dangling = mesh_graph
+            .vertices
+            .values()
+            .filter(|v| v.faces(&mesh_graph).next().is_none())
+            .count();
+        assert_eq!(dangling, 0, "stroke {stroke} left vertices without faces");
+        assert!(
+            crate::deformation::normals_cover_mesh(&mesh_graph),
+            "stroke {stroke} left vertices without normals"
+        );
+    }
+
+    assert!(
+        mesh_graph.vertices.len() > 4 * vertices_before,
+        "the cleanup stopped subdividing early: {} -> {} vertices",
+        vertices_before,
+        mesh_graph.vertices.len()
+    );
+}
+
+/// The step count `apply` derives from `max_movement_squared` must keep every
+/// step within `max_move_dist`, or collisions between steps can be missed. With
+/// `strength > 1` the old `len² * strength` bound took half the steps needed.
+#[test]
+fn apply_steps_stay_within_max_move_dist() {
+    use crate::deformation::{DeformationField, TopologyManager, TranslateDeformation};
+    use crate::ray::{FaceIntersection, Ray};
+    use crate::selectors::{DistanceWithFalloff, MeshSelector, SMOOTH_FALLOFF, WeightedSelection};
+    use glam::Vec3;
+    use mesh_graph::primitives::IcoSphere;
+    use std::cell::Cell;
+
+    /// Counts the selects `apply` makes.
+    struct Counting {
+        inner: DistanceWithFalloff,
+        calls: Cell<usize>,
+    }
+
+    impl MeshSelector for Counting {
+        fn select(&self, mesh_graph: &MeshGraph, hit: &FaceIntersection) -> WeightedSelection {
+            self.calls.set(self.calls.get() + 1);
+            self.inner.select(mesh_graph, hit)
+        }
+    }
+
+    let mut mesh_graph = MeshGraph::from(IcoSphere {
+        subdivisions: 3,
+        radius: 1.0,
+    });
+    mesh_graph.compute_vertex_normals();
+    let params = SculptParams::from_mesh_graph(&mesh_graph, 0.0);
+    let max_move_dist = params.max_move_dist_squared.sqrt();
+
+    let hit = Ray {
+        origin: Vec3::new(5.0, 0.0, 0.0),
+        direction: Vec3::NEG_X,
+    }
+    .cast_ray_and_get_face_id(&mesh_graph)
+    .unwrap();
+
+    let mut translate = TranslateDeformation::new();
+    translate.on_pointer_down(hit);
+    translate.on_pointer_move(&mesh_graph, Vec3::X * 0.1, Some(hit));
+
+    let selector = Counting {
+        inner: DistanceWithFalloff::sphere(1.0, 0.5, SMOOTH_FALLOFF),
+        calls: Cell::new(0),
+    };
+    let mut topology_manager = TopologyManager::new(&mesh_graph, params);
+    translate.apply(
+        &mut mesh_graph,
+        &selector,
+        4.0,
+        params,
+        &mut topology_manager,
+    );
+
+    // Translate sizes its steps without selecting, so `apply` selects once per step
+    // and once more to pick the vertices whose normals are recomputed.
+    let steps = selector.calls.get() - 1;
+
+    // The selection's centre has weight 1, so the largest movement is the whole
+    // translation times the strength, and no step may move more than max_move_dist.
+    let largest_movement = 0.1 * 4.0;
+    let needed = (largest_movement / max_move_dist).ceil() as usize;
+    assert!(
+        steps >= needed,
+        "apply took {steps} steps for a movement of {largest_movement}; each step moves \
+         more than max_move_dist {max_move_dist} unless it takes at least {needed}"
+    );
+}
+
+/// `ErodeDilateDeformation` moves `normal * amount * weight * strength`, so its
+/// step bound has to scale with `strength²`.
+#[test]
+fn erode_dilate_max_movement_scales_with_strength_squared() {
+    use crate::deformation::{DeformationField, ErodeDilateDeformation};
+    use crate::ray::FaceIntersection;
+    use crate::selectors::{DistanceWithFalloff, SMOOTH_FALLOFF};
+    use mesh_graph::primitives::IcoSphere;
+
+    let mesh_graph = MeshGraph::from(IcoSphere {
+        subdivisions: 1,
+        radius: 1.0,
+    });
+    let face = *mesh_graph.faces.values().next().unwrap();
+    let hit = FaceIntersection {
+        point: glam::Vec3::ZERO,
+        face,
+        toi: 0.0,
+    };
+    let selector = DistanceWithFalloff::sphere(0.3, 0.2, SMOOTH_FALLOFF);
+    let erode = ErodeDilateDeformation::new(0.1);
+
+    for strength in [1.0f32, 2.0, -3.0] {
+        let bound = erode.max_movement_squared(&mesh_graph, &selector, strength, &hit);
+        let expected = 0.01 * strength * strength;
+        assert!(
+            (bound - expected).abs() < 1e-7,
+            "strength {strength}: got {bound}, expected {expected}"
+        );
+    }
 }

@@ -8,10 +8,7 @@ clap = { version = "4", features = ["derive"] }
 examples.workspace = true
 freestyle-sculpt = { workspace = true, features = ["rerun", "serde"] }
 glam = "0.33"
-mesh-graph = { version = "*", features = [
-    "rerun",
-    "serde",
-], path = "../../../mesh-graph" }
+mesh-graph = { workspace = true, features = ["rerun", "serde"] }
 serde.workspace = true
 serde_json.workspace = true
 tracing-subscriber.workspace = true

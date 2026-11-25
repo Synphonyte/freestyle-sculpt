@@ -56,8 +56,3 @@ instrumentation = [
 [dev-dependencies]
 serde_json = "1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# TEMPORARY: validate the merge/collapse fix against the local mesh-graph
-# before reverting to the published crate.
-[patch.crates-io]
-mesh-graph = { path = "../mesh-graph" }

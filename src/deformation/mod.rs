@@ -33,6 +33,42 @@ pub(crate) fn normal_offset(normal: Vec3, amount: f32) -> Vec3 {
     }
 }
 
+/// Computes the normals of those `vertex_ids` that have none, if the mesh has normals.
+///
+/// mesh-graph's ops add vertices without normals (except subdivision, which
+/// interpolates them), while subdivision stalls on an edge whose endpoint has none.
+/// The crate calls this with the vertices an op reports as added, so a complete
+/// normals map stays complete; each id is a lookup unless its normal is missing.
+pub(crate) fn fill_missing_normals(
+    mesh_graph: &mut MeshGraph,
+    vertex_ids: impl IntoIterator<Item = mesh_graph::VertexId>,
+) {
+    let Some(normals) = mesh_graph.vertex_normals.as_ref() else {
+        return;
+    };
+    let missing: Vec<_> = vertex_ids
+        .into_iter()
+        .filter(|&v_id| !normals.contains_key(v_id) && mesh_graph.vertices.contains_key(v_id))
+        .collect();
+    for v_id in missing {
+        mesh_graph.compute_vertex_normal(v_id);
+    }
+}
+
+/// Whether every vertex with a face has a vertex normal (`false` without normals).
+///
+/// Linear in the mesh size; meant for `debug_assert!`s of the "normals are complete"
+/// precondition.
+pub(crate) fn normals_cover_mesh(mesh_graph: &MeshGraph) -> bool {
+    let Some(normals) = mesh_graph.vertex_normals.as_ref() else {
+        return false;
+    };
+    mesh_graph
+        .vertices
+        .iter()
+        .all(|(v_id, v)| normals.contains_key(v_id) || v.faces(mesh_graph).next().is_none())
+}
+
 /// Brings the mesh back inside the edge-length band, merging colliding sheets on the
 /// way when `allow_topology_change` is set.
 ///
@@ -111,7 +147,13 @@ pub fn cleanup_mesh(
             #[cfg(test)]
             cleanup_probe::record(cleanup_probe::Phase::Merge, mesh_graph);
         } else {
+            // The marked sets only record what this call's collapses and splits
+            // created, to detect progress below. The topology branch clears them once
+            // nothing is left to merge; this branch has to as well, or they grow
+            // across every stroke and keep those vertices out of later merges.
             if collapse_outcome.converged() && subdivide_outcome.converged() {
+                topology_manager.protected_vertices.clear();
+                topology_manager.protected_halfedges.clear();
                 // Every edge is within the length band, so there is nothing left to
                 // iterate on. This used to be inferred from `protected_vertices` not
                 // growing, which could not tell a clean mesh from a marked set that
@@ -125,6 +167,8 @@ pub fn cleanup_mesh(
             // and further iterations cannot change that.
             let new_count = topology_manager.protected_vertices.len();
             if new_count == protected_vertices_count {
+                topology_manager.protected_vertices.clear();
+                topology_manager.protected_halfedges.clear();
                 return EdgeLengthCleanup::Stalled;
             }
             protected_vertices_count = new_count;
@@ -132,6 +176,10 @@ pub fn cleanup_mesh(
     }
 
     tracing::error!("cleanup_mesh did not converge after {MAX_CLEANUP_ITERATIONS} iterations");
+
+    // Same as the returns above: the marked sets are this call's bookkeeping.
+    topology_manager.protected_vertices.clear();
+    topology_manager.protected_halfedges.clear();
 
     EdgeLengthCleanup::Stalled
 }
@@ -148,6 +196,51 @@ fn combine(collapse: EdgeLengthCleanup, subdivide: EdgeLengthCleanup) -> EdgeLen
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The contract both call sites rely on: a listed vertex without a normal gets
+    /// one, a listed vertex with a normal keeps it, and without normals nothing
+    /// happens.
+    #[test]
+    fn fill_missing_normals_fills_only_the_missing_ones() {
+        use mesh_graph::primitives::IcoSphere;
+
+        let mut mesh_graph = MeshGraph::from(IcoSphere {
+            subdivisions: 1,
+            radius: 1.0,
+        });
+        let ids: Vec<_> = mesh_graph.vertices.keys().take(2).collect();
+        let (missing, present) = (ids[0], ids[1]);
+
+        // Without normals it is a no-op.
+        mesh_graph.vertex_normals = None;
+        fill_missing_normals(&mut mesh_graph, [missing, present]);
+        assert!(mesh_graph.vertex_normals.is_none());
+
+        mesh_graph.compute_vertex_normals();
+        let expected = mesh_graph.vertex_normals.as_ref().unwrap()[missing];
+        let normals = mesh_graph.vertex_normals.as_mut().unwrap();
+        normals.remove(missing);
+        // A deliberately wrong normal, to see that it is not recomputed.
+        let sentinel = Vec3::new(0.0, 0.0, -1.0);
+        normals.insert(present, sentinel);
+
+        fill_missing_normals(&mut mesh_graph, [missing, present]);
+
+        let normals = mesh_graph.vertex_normals.as_ref().unwrap();
+        // The helper averages unit face normals while `compute_vertex_normals` weights
+        // them by area, so compare directions loosely rather than exactly.
+        let filled = normals[missing];
+        assert!(
+            (filled.length() - 1.0).abs() < 1e-5,
+            "not a unit normal: {filled}"
+        );
+        assert!(
+            filled.dot(expected) > 3f32.to_radians().cos(),
+            "filled normal {filled} is not close to {expected}"
+        );
+        assert_eq!(normals[present], sentinel);
+        assert!(normals_cover_mesh(&mesh_graph));
+    }
 
     #[test]
     fn normal_offset_ignores_a_non_finite_normal() {

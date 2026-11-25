@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use glam::Vec3;
 use mesh_graph::MeshGraph;
 use parry3d::query::PointQuery;
-use tracing::{error, instrument};
+use tracing::{error, instrument, warn};
 
 use crate::{
     SculptParams,
@@ -20,7 +20,10 @@ use crate::{
 /// * `amount < 0` => **close** = dilate (`+normal * |amount|`) then erode (`-normal * |amount|`).
 ///   Fills small gaps and fuses close sheets via the topology manager.
 ///
-/// `amount` is the offset per phase. `0`, non-finite or near-zero
+/// `amount` is the offset per phase. Each phase moves in steps of at most
+/// `params.max_move_dist_squared.sqrt()`, capped at 200 steps; beyond that the steps
+/// grow and colliding sheets can pass through each other, so keep
+/// `|amount| <= 200 * max_move_dist`. `0`, non-finite or near-zero
 /// values are a no-op (warns). Topology merges run between and after the
 /// two phases via [`cleanup_mesh`] with `allow_topology_change = true`,
 /// so a close can fuse sheets separated by less than `params.max_thickness`.
@@ -112,10 +115,15 @@ fn apply_phase<M>(
 
     // Step count mirrors DeformationField::apply: ceil(sqrt(max_move² / max_move_dist²)).
     // Global operator: max movement == |amount| (weight 1.0 for all vertices).
-    let steps = (mag * mag / params.max_move_dist_squared)
-        .sqrt()
-        .ceil()
-        .clamp(1.0, 200.0) as usize;
+    const MAX_STEP_COUNT: f32 = 200.0;
+    let needed_steps = (mag * mag / params.max_move_dist_squared).sqrt().ceil();
+    if needed_steps > MAX_STEP_COUNT {
+        warn!(
+            "morphological_open_close: amount {signed_amount} needs {needed_steps} steps, \
+             capped at {MAX_STEP_COUNT}; steps exceed max_move_dist and collisions can be missed"
+        );
+    }
+    let steps = needed_steps.clamp(1.0, MAX_STEP_COUNT) as usize;
 
     let factor = 1.0 / steps as f32;
 

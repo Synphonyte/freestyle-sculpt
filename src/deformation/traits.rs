@@ -3,8 +3,7 @@ use glam::Vec3;
 use itertools::Itertools;
 use mesh_graph::{MeshGraph, VertexId};
 use parry3d::query::PointQueryWithLocation;
-use slotmap::SecondaryMap;
-use tracing::{error, instrument};
+use tracing::{error, instrument, warn};
 
 #[cfg(feature = "instrumentation")]
 use crate::deformation::journal::{self};
@@ -91,6 +90,13 @@ pub trait DeformationField {
     /// This is the main method of this trait. It applies the deformation to the mesh graph.
     ///
     /// This method should be called after `on_pointer_move` returns `true`.
+    ///
+    /// `strength` must be finite. If the mesh has vertex normals they must cover every
+    /// vertex (as [`MeshGraph::compute_vertex_normals`] leaves them); `None` is fine
+    /// and computes them. The movement is split into steps of at most
+    /// `params.max_move_dist_squared.sqrt()` so that collisions are not skipped, but
+    /// the step count is capped at 100: a larger movement per call takes bigger steps
+    /// and can let sheets pass through each other, so split it across calls instead.
     #[instrument(skip_all)]
     fn apply(
         &mut self,
@@ -107,13 +113,38 @@ pub trait DeformationField {
             return HashMap::default();
         };
 
+        debug_assert!(
+            strength.is_finite(),
+            "strength must be finite, got {strength}"
+        );
+
+        // `Some` normals must cover the whole mesh: subdivision interpolates the new
+        // vertex's normal from the edge's endpoints and stalls (leaving the vertex it
+        // just added without faces) when one is missing. Subdivision fills in the
+        // normals of the vertices it adds; for the ones collapse and merge add, the
+        // cleanup calls `fill_missing_normals`, so a complete map stays complete.
+        if mesh_graph.vertex_normals.is_none() {
+            mesh_graph.compute_vertex_normals();
+        }
+        debug_assert!(
+            super::normals_cover_mesh(mesh_graph),
+            "`vertex_normals` is `Some` but misses vertices; recompute it with \
+             `compute_vertex_normals` or set it to `None`"
+        );
+
         let max_movement_squared =
             self.max_movement_squared(mesh_graph, selector, strength, intersection);
 
-        let steps = (max_movement_squared / params.max_move_dist_squared)
+        let needed_steps = (max_movement_squared / params.max_move_dist_squared)
             .sqrt()
-            .ceil()
-            .clamp(1.0, MAX_STEP_COUNT);
+            .ceil();
+        if needed_steps > MAX_STEP_COUNT {
+            warn!(
+                "movement needs {needed_steps} steps, capped at {MAX_STEP_COUNT}; \
+                 steps exceed max_move_dist and collisions can be missed"
+            );
+        }
+        let steps = needed_steps.clamp(1.0, MAX_STEP_COUNT);
 
         let factor = 1.0 / steps;
 
@@ -130,7 +161,8 @@ pub trait DeformationField {
             &topology_manager.protected_vertices,
             &topology_manager.protected_halfedges,
         );
-        mesh_graph.collapse_until_edges_above_min_length(
+        crate::deformation::collapse_until_edges_above_min_length_with_weld_capture(
+            mesh_graph,
             params.min_edge_length_squared,
             &mut topology_manager.protected_vertices,
         );
@@ -197,10 +229,6 @@ pub trait DeformationField {
         };
 
         vertex_to_weight = selector.select(mesh_graph, intersection).vertex_to_weight;
-
-        if mesh_graph.vertex_normals.is_none() {
-            mesh_graph.vertex_normals = Some(SecondaryMap::new());
-        }
 
         let mut invalid_vertex_ids = vec![];
 

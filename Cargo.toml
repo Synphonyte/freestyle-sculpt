@@ -28,8 +28,8 @@ lazy_static = { version = "1.5", optional = true }
 mesh-graph = { git = "https://github.com/Synphonyte/mesh-graph", branch = "main" }
 ordered-float = "5"
 parry3d = "0.31"
-rapier3d = { version = "0.35" }
-rerun = { version = "0.40", default-features = false, optional = true }
+rapier3d = { version = "0.36" }
+rerun = { version = "0.43", default-features = false, optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 slotmap = "1"
 tracing = { version = "0.1", features = ["release_max_level_off"] }

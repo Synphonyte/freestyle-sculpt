@@ -1511,10 +1511,12 @@ impl TopologyManager {
         let mut removed_vertices = Vec::new();
         for (&vertex_id, &collider_handle) in self.vertex_id_to_collider_handle.iter() {
             if !mesh_graph.vertices.contains_key(vertex_id) {
+                // Our colliders are never deformable, so no soft body refers to them.
                 self.collider_set.remove(
                     collider_handle,
                     &mut self.island_manager,
                     &mut self.rigid_body_set,
+                    &mut SoftBodySet::new(),
                     false,
                 );
 

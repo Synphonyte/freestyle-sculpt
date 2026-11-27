@@ -64,7 +64,13 @@ impl TopologyManager {
     }
 }
 
-/// The weld-path collapse, wrapped in the collapse-phase capture: under
+/// The crate's collapse: every edge collapse on the live mesh goes through here, not
+/// through mesh-graph's `collapse_until_edges_above_min_length` directly, because
+/// this also gives the vertices the collapse's manifold repair adds a normal (see
+/// [`super::fill_missing_normals`]). Skipping it can leave the normals map
+/// incomplete and stall the subdivision that follows.
+///
+/// It is also wrapped in the collapse-phase capture: under
 /// `WELD_CAPTURE=1` the pre-op mesh is cloned, and if the collapse opens a
 /// previously-closed region (boundary gained with none before) or leaves a
 /// wire edge (both halves faceless), the neighborhood of the newly-added
@@ -75,10 +81,24 @@ pub(crate) fn collapse_until_edges_above_min_length_with_weld_capture(
     min_len_sqr: f32,
     marked_vertices: &mut HashSet<VertexId>,
 ) -> mesh_graph::EdgeLengthCleanup {
-    if !weld_capture_enabled() {
-        return mesh_graph.collapse_until_edges_above_min_length(min_len_sqr, marked_vertices);
-    }
+    let outcome = if weld_capture_enabled() {
+        collapse_with_weld_capture(mesh_graph, min_len_sqr, marked_vertices)
+    } else {
+        mesh_graph.collapse_until_edges_above_min_length(min_len_sqr, marked_vertices)
+    };
 
+    // The collapse's manifold repair can add vertices, without normals. They are
+    // marked, so fill those in before a subdivision trips over them.
+    super::fill_missing_normals(mesh_graph, marked_vertices.iter().copied());
+
+    outcome
+}
+
+fn collapse_with_weld_capture(
+    mesh_graph: &mut MeshGraph,
+    min_len_sqr: f32,
+    marked_vertices: &mut HashSet<VertexId>,
+) -> mesh_graph::EdgeLengthCleanup {
     // Every weld call site passes `protected_vertices` as the marked set, so the
     // snapshot doubles as the replay's protected set.
     let protected = marked_vertices.clone();
@@ -1122,6 +1142,11 @@ impl TopologyManager {
             .user_data(vertex_id.into())
     }
 
+    /// Creates a collider per vertex, sized from `sculpt_params`.
+    ///
+    /// The collider radius is fixed here: [`Self::sync_mesh_graph`] only moves
+    /// existing colliders. If the sculpt params change, create a new
+    /// `TopologyManager`, or the old vertices keep the old merge distance.
     pub fn new(mesh_graph: &MeshGraph, sculpt_params: SculptParams) -> Self {
         let mut collider_set = ColliderSet::new();
         let mut vertex_id_to_collider_handle = HashMap::default();
@@ -1455,6 +1480,10 @@ impl TopologyManager {
                     self.protected_vertices.insert(v_id2);
                     continue;
                 }
+
+                // The merge (its centre fan and manifold repair) can add vertices,
+                // without normals; keep the normals map complete.
+                super::fill_missing_normals(mesh_graph, merged.added_vertices.iter().copied());
 
                 return Some(merged);
             }

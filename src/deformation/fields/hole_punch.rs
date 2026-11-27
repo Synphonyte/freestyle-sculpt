@@ -27,6 +27,9 @@ use crate::{
 /// if you need to apply a scale, either manually apply it the mesh graph before calling this function
 /// (and making sure that the `params` are still correct) or if it's a uniform scale you can apply it
 /// to `projection` instead.
+///
+/// Every vertex must have a normal (e.g. from [`MeshGraph::compute_vertex_normals`]):
+/// vertices are pushed along them, and without them nothing moves.
 #[instrument(skip(mesh_graph, topology_manager))]
 pub fn punch_hole(
     mesh_graph: &mut MeshGraph,
@@ -40,6 +43,11 @@ pub fn punch_hole(
         warn!("Hole shape is empty => skipping punch_hole");
         return;
     }
+
+    debug_assert!(
+        crate::deformation::normals_cover_mesh(mesh_graph),
+        "punch_hole needs vertex normals for every vertex; call `compute_vertex_normals` first"
+    );
 
     mesh_graph.apply_transform(obj_to_camera_isometry);
     mesh_graph.rebuild_bvh();
@@ -57,7 +65,8 @@ pub fn punch_hole(
         &topology_manager.protected_vertices,
         &topology_manager.protected_halfedges,
     );
-    mesh_graph.collapse_until_edges_above_min_length(
+    crate::deformation::collapse_until_edges_above_min_length_with_weld_capture(
+        mesh_graph,
         params.min_edge_length_squared,
         &mut topology_manager.protected_vertices,
     );

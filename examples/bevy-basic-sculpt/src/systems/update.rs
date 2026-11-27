@@ -176,9 +176,9 @@ pub fn handle_morph_open_close(
 
     let (mut mesh_graph, mesh_handle) = mesh_graphs.single_mut()?;
 
-    morphological_open_close(&mut mesh_graph, &sculpt_params, &mut topology_manager, amount);
+    morphological_open_close(&mut mesh_graph, &sculpt_params, &mut topology_manager, amount, ());
 
-    if let Some(mesh) = meshes.get_mut(mesh_handle) {
+    if let Some(mut mesh) = meshes.get_mut(mesh_handle) {
         *mesh = mesh_graph.clone().into();
     }
 

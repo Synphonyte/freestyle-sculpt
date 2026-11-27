@@ -94,7 +94,7 @@ pub fn main() {
                 // do nothing
             }
             EditActionType::MouseMove => {
-                if ray.direction.z.abs() <= f32::EPSILON {
+                if action.ray.direction.z.abs() <= f32::EPSILON {
                     continue;
                 }
 
